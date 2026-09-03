@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Temporary password generator
+create_password.py
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local database
+*.db
+*.sqlite3
