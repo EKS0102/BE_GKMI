@@ -18,6 +18,7 @@ jobs:
     services:
       postgres:
         image: postgres:15
+
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -28,9 +29,9 @@ jobs:
 
         options: >-
           --health-cmd "pg_isready -U postgres -d presensi_jemaat_test"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
 
     steps:
@@ -44,7 +45,7 @@ jobs:
 
 
       # ===================================================
-      # SETUP PYTHON
+      # PYTHON
       # ===================================================
 
       - name: Setup Python
@@ -64,14 +65,32 @@ jobs:
 
 
       # ===================================================
+      # ALEMBIC MIGRATION
+      # ===================================================
+
+      - name: Run Alembic migrations
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
+
+          SECRET_KEY: github-actions-test-secret-key-that-is-long-enough-1234567890
+
+          ALGORITHM: HS256
+
+          ACCESS_TOKEN_EXPIRE_MINUTES: 60
+
+        run: |
+          alembic upgrade head
+
+
+      # ===================================================
       # RUN TEST
       # ===================================================
 
       - name: Run tests
         env:
-          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
-
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
 
           SECRET_KEY: github-actions-test-secret-key-that-is-long-enough-1234567890
 
@@ -89,9 +108,8 @@ jobs:
 
       - name: Run coverage
         env:
-          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
-
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/presensi_jemaat_test
 
           SECRET_KEY: github-actions-test-secret-key-that-is-long-enough-1234567890
 

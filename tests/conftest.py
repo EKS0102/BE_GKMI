@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
@@ -6,6 +7,9 @@ from fastapi.testclient import TestClient
 from pwdlib import PasswordHash
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+from alembic import command
+from alembic.config import Config
 
 from database.database import Base
 from main import app, get_db
@@ -47,6 +51,15 @@ TestingSessionLocal = sessionmaker(
 
 
 # =========================================================
+# ALEMBIC CONFIG
+# =========================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+ALEMBIC_INI_PATH = BASE_DIR / "alembic.ini"
+
+
+# =========================================================
 # PASSWORD HASH
 # =========================================================
 
@@ -59,11 +72,6 @@ password_hash = PasswordHash.recommended()
 
 @pytest.fixture(scope="function")
 def db():
-    # Pastikan tabel tersedia
-    Base.metadata.create_all(
-        bind=engine_test
-    )
-
     db_session = TestingSessionLocal()
 
     try:
@@ -83,6 +91,34 @@ def db():
 
 
 # =========================================================
+# APPLY ALEMBIC MIGRATION
+#
+# Dijalankan sekali sebelum seluruh test session.
+# =========================================================
+
+@pytest.fixture(scope="session", autouse=True)
+def migrate_test_database():
+
+    alembic_config = Config(
+        str(ALEMBIC_INI_PATH)
+    )
+
+    # Arahkan Alembic ke database testing
+    alembic_config.set_main_option(
+        "sqlalchemy.url",
+        TEST_DATABASE_URL
+    )
+
+    # Pastikan migration dijalankan sampai head
+    command.upgrade(
+        alembic_config,
+        "head"
+    )
+
+    yield
+
+
+# =========================================================
 # TEST CLIENT
 # =========================================================
 
@@ -95,13 +131,11 @@ def client(db):
         finally:
             pass
 
-    # Gunakan database testing
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
         yield test_client
 
-    # Bersihkan override setelah test
     app.dependency_overrides.clear()
 
 
@@ -138,9 +172,7 @@ def create_user(
 # =========================================================
 # BACKWARD COMPATIBILITY
 #
-# Digunakan oleh:
-# - test_auth.py
-# - test_register.py
+# Digunakan oleh test_auth.py dan test_register.py
 # =========================================================
 
 @pytest.fixture

@@ -12,14 +12,15 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '8255ea7414c8'
-down_revision: Union[str, Sequence[str], None] = 'ee51ec6873a7'
+revision: str = "8255ea7414c8"
+down_revision: Union[str, Sequence[str], None] = "ee51ec6873a7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    """Add email column to users."""
+
     op.add_column(
         "users",
         sa.Column(
@@ -37,7 +38,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Remove email column from users."""
+
     op.drop_constraint(
         "uq_users_email",
         "users",
