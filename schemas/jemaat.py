@@ -1,7 +1,7 @@
 from datetime import date
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # =========================================================
@@ -116,8 +116,9 @@ class JemaatResponse(BaseModel):
     status_diakonia: StatusDiakonia
     kelompok_ibadah: KelompokIbadah
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
 # =========================================================

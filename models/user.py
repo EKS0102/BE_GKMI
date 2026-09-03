@@ -11,3 +11,4 @@ class User(Base):
     password_hash = Column(Text, nullable=False)
     role = Column(String(20), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    email = Column(String(100), unique=True, nullable=True)

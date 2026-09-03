@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-
+from sqlalchemy.exc import IntegrityError
 from database.database import Base, engine, SessionLocal
 
 from schemas.jemaat import (
@@ -37,6 +37,7 @@ from services.jemaat_service import (
 
 from services.auth_service import (
     get_user_by_username,
+    get_user_by_email,
     create_user
 )
 
@@ -75,7 +76,7 @@ password_hash = PasswordHash.recommended()
 # DATABASE
 # =========================================================
 
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 
 def get_db():
@@ -132,13 +133,20 @@ def home():
 # AUTH - REGISTER
 # =========================================================
 
+# =========================================================
+# AUTH - REGISTER
+# =========================================================
+
 @app.post(
     "/auth/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {
-            "description": "Username sudah digunakan"
+            "description": "Username atau email sudah digunakan"
+        },
+        422: {
+            "description": "Format email tidak valid"
         },
         500: {
             "description": "Internal Server Error"
@@ -152,6 +160,10 @@ def register(
     logger.info(
         f"Registrasi user: {data.username}"
     )
+
+    # =====================================================
+    # CEK USERNAME
+    # =====================================================
 
     existing_user = get_user_by_username(
         db,
@@ -169,23 +181,65 @@ def register(
             detail="Username sudah digunakan"
         )
 
+    # =====================================================
+    # CEK EMAIL
+    # =====================================================
+
+    email_value = str(data.email)
+
+    existing_email = get_user_by_email(
+        db,
+        email_value
+    )
+
+    if existing_email is not None:
+        logger.warning(
+            f"Registrasi gagal, email sudah digunakan: "
+            f"{email_value}"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email sudah digunakan"
+        )
+
+    # =====================================================
+    # HASH PASSWORD
+    # =====================================================
+
     hashed_password = password_hash.hash(
         data.password
     )
 
-    user = create_user(
-        db,
-        data.username,
-        hashed_password,
-        data.role
-    )
+    # =====================================================
+    # CREATE USER
+    # =====================================================
+
+    try:
+        user = create_user(
+            db=db,
+            username=data.username,
+            password_hash=hashed_password,
+            role=data.role.value,
+            email=email_value
+        )
+
+    except IntegrityError:
+        logger.exception(
+            f"IntegrityError saat registrasi user: "
+            f"{data.username}"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username atau email sudah digunakan"
+        )
 
     logger.info(
         f"User berhasil dibuat: {user.username}"
     )
 
     return user
-
 
 # =========================================================
 # AUTH - LOGIN

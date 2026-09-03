@@ -1,4 +1,16 @@
-from pydantic import BaseModel
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+
+# =========================================================
+# ENUM - PILIHAN ROLE USER
+# =========================================================
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    STAFF = "staff"
+    VIEWER = "viewer"
 
 
 # =========================================================
@@ -9,7 +21,8 @@ from pydantic import BaseModel
 class RegisterRequest(BaseModel):
     username: str
     password: str
-    role: str = "user"
+    role: UserRole = UserRole.VIEWER
+    email: EmailStr
 
 
 # =========================================================
@@ -25,17 +38,19 @@ class LoginRequest(BaseModel):
 # =========================================================
 # USER RESPONSE
 # Data user yang boleh dikirim ke client
-# Password tidak dikembalikan
+# Password dan password_hash tidak dikembalikan
 # =========================================================
 
 class UserResponse(BaseModel):
     id: int
     username: str
-    role: str
+    role: UserRole
     is_active: bool
+    email: EmailStr | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
 
 # =========================================================
