@@ -2,18 +2,25 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 
+from config import (
+    SECRET_KEY,
+    ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
-SECRET_KEY = "ganti-dengan-secret-key-yang-panjang-dan-random"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+# =========================================================
+# CREATE ACCESS TOKEN
+# =========================================================
 
 def create_access_token(data: dict):
     to_encode = data.copy()
 
     expire = (
         datetime.now(timezone.utc)
-        + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        + timedelta(
+            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+        )
     )
 
     to_encode.update({

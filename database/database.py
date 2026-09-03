@@ -1,14 +1,32 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = "postgresql+psycopg://postgres:123123@localhost:5432/presensi_jemaat"
+from config import DATABASE_URL
 
-engine = create_engine(DATABASE_URL)
+
+# =========================================================
+# DATABASE ENGINE
+# =========================================================
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True
+)
+
+
+# =========================================================
+# SESSION
+# =========================================================
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine
 )
+
+
+# =========================================================
+# BASE MODEL
+# =========================================================
 
 Base = declarative_base()
