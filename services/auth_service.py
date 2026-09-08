@@ -2,6 +2,7 @@ from sqlalchemy.exc import IntegrityError
 
 from models.user import User
 from repositories.user_repository import UserRepository
+from unit_of_work import UnitOfWork
 
 
 # =========================================================
@@ -11,13 +12,18 @@ from repositories.user_repository import UserRepository
 class AuthService:
     """
     Service untuk business logic User / Authentication.
+
+    Repository menangani akses data.
+    UnitOfWork menangani transaction.
     """
 
     def __init__(
         self,
-        repository: UserRepository
+        repository: UserRepository,
+        unit_of_work: UnitOfWork
     ):
         self.repository = repository
+        self.unit_of_work = unit_of_work
 
     # =====================================================
     # GET USER BY USERNAME
@@ -67,7 +73,7 @@ class AuthService:
                 user
             )
 
-            self.repository.commit()
+            self.unit_of_work.commit()
 
             self.repository.refresh(
                 user
@@ -76,5 +82,5 @@ class AuthService:
             return user
 
         except IntegrityError:
-            self.repository.rollback()
+            self.unit_of_work.rollback()
             raise

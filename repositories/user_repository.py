@@ -3,13 +3,12 @@ from sqlalchemy.orm import Session
 from models.user import User
 
 
-# =========================================================
-# USER REPOSITORY
-# =========================================================
-
 class UserRepository:
     """
-    Repository untuk seluruh akses database User.
+    Repository untuk akses data User.
+
+    Repository hanya bertanggung jawab terhadap operasi data.
+    Transaction (commit / rollback) dikelola oleh UnitOfWork.
     """
 
     def __init__(self, db: Session):
@@ -54,21 +53,7 @@ class UserRepository:
         self.db.add(user)
 
     # =====================================================
-    # COMMIT
-    # =====================================================
-
-    def commit(self):
-        self.db.commit()
-
-    # =====================================================
-    # ROLLBACK
-    # =====================================================
-
-    def rollback(self):
-        self.db.rollback()
-
-    # =====================================================
-    # REFRESH
+    # REFRESH USER
     # =====================================================
 
     def refresh(

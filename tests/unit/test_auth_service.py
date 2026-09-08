@@ -26,14 +26,15 @@ def create_user_model():
 # =========================================================
 
 def create_service():
-
     repository = Mock()
+    unit_of_work = Mock()
 
     service = AuthService(
-        repository
+        repository,
+        unit_of_work
     )
 
-    return service, repository
+    return service, repository, unit_of_work
 
 
 # =========================================================
@@ -42,7 +43,9 @@ def create_service():
 
 def test_get_user_by_username_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     expected = create_user_model()
 
@@ -60,6 +63,9 @@ def test_get_user_by_username_found():
         "admin"
     )
 
+    unit_of_work.commit.assert_not_called()
+    unit_of_work.rollback.assert_not_called()
+
 
 # =========================================================
 # GET USER BY USERNAME - NOT FOUND
@@ -67,7 +73,9 @@ def test_get_user_by_username_found():
 
 def test_get_user_by_username_not_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     repository.get_by_username.return_value = None
 
@@ -88,7 +96,9 @@ def test_get_user_by_username_not_found():
 
 def test_get_user_by_email_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     expected = create_user_model()
 
@@ -113,7 +123,9 @@ def test_get_user_by_email_found():
 
 def test_get_user_by_email_not_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     repository.get_by_email.return_value = None
 
@@ -134,7 +146,9 @@ def test_get_user_by_email_not_found():
 
 def test_create_user():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     result = service.create_user(
         username="admin",
@@ -153,7 +167,7 @@ def test_create_user():
 
     repository.add.assert_called_once()
 
-    repository.commit.assert_called_once()
+    unit_of_work.commit.assert_called_once()
 
     repository.refresh.assert_called_once_with(
         result
@@ -166,9 +180,11 @@ def test_create_user():
 
 def test_create_user_integrity_error():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
-    repository.commit.side_effect = IntegrityError(
+    unit_of_work.commit.side_effect = IntegrityError(
         "INSERT",
         {},
         Exception("duplicate key")
@@ -193,6 +209,8 @@ def test_create_user_integrity_error():
 
     repository.add.assert_called_once()
 
-    repository.commit.assert_called_once()
+    unit_of_work.commit.assert_called_once()
 
-    repository.rollback.assert_called_once()
+    unit_of_work.rollback.assert_called_once()
+
+    repository.refresh.assert_not_called()

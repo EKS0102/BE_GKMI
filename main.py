@@ -126,8 +126,13 @@ def get_auth_service(
         db
     )
 
+    unit_of_work = UnitOfWork(
+        db
+    )
+
     return AuthService(
-        repository
+        repository,
+        unit_of_work
     )
 
 
