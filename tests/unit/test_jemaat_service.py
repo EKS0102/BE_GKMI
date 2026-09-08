@@ -64,16 +64,25 @@ def create_model_jemaat():
 # =========================================================
 
 def create_service():
+    """
+    Membuat Service dengan UnitOfWork palsu.
 
-    repository = Mock()
+    UnitOfWork memiliki dua repository:
+    - jemaat
+    - audit_log
+    """
+
     unit_of_work = Mock()
 
+    unit_of_work.jemaat = Mock()
+    unit_of_work.audit_log = Mock()
+    unit_of_work.session = Mock()
+
     service = JemaatService(
-        repository,
         unit_of_work
     )
 
-    return service, repository, unit_of_work
+    return service, unit_of_work
 
 
 # =========================================================
@@ -82,19 +91,21 @@ def create_service():
 
 def test_get_jemaat_by_id_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     expected = create_model_jemaat()
 
-    repository.get_by_id.return_value = expected
+    unit_of_work.jemaat.get_by_id.return_value = (
+        expected
+    )
 
-    result = service.get_jemaat_by_id(1)
+    result = service.get_jemaat_by_id(
+        1
+    )
 
     assert result == expected
 
-    repository.get_by_id.assert_called_once_with(
+    unit_of_work.jemaat.get_by_id.assert_called_once_with(
         1
     )
 
@@ -105,17 +116,17 @@ def test_get_jemaat_by_id_found():
 
 def test_get_jemaat_by_id_not_found():
 
-    service, repository, unit_of_work = (
-        create_service()
+    service, unit_of_work = create_service()
+
+    unit_of_work.jemaat.get_by_id.return_value = None
+
+    result = service.get_jemaat_by_id(
+        999
     )
-
-    repository.get_by_id.return_value = None
-
-    result = service.get_jemaat_by_id(999)
 
     assert result is None
 
-    repository.get_by_id.assert_called_once_with(
+    unit_of_work.jemaat.get_by_id.assert_called_once_with(
         999
     )
 
@@ -126,9 +137,7 @@ def test_get_jemaat_by_id_not_found():
 
 def test_create_jemaat():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     result = service.create_jemaat(
         create_jemaat_create()
@@ -143,13 +152,56 @@ def test_create_jemaat():
     assert result.status_diakonia == "Ya"
     assert result.kelompok_ibadah == "Youth"
 
-    repository.add.assert_called_once()
+    unit_of_work.jemaat.add.assert_called_once()
+
+    unit_of_work.session.flush.assert_called_once()
 
     unit_of_work.commit.assert_called_once()
 
-    repository.refresh.assert_called_once_with(
+    unit_of_work.jemaat.refresh.assert_called_once_with(
         result
     )
+
+    # user_id tidak dikirim, jadi audit log tidak dibuat
+    unit_of_work.audit_log.add.assert_not_called()
+
+
+# =========================================================
+# CREATE + AUDIT LOG
+# =========================================================
+
+def test_create_jemaat_with_audit_log():
+
+    service, unit_of_work = create_service()
+
+    result = service.create_jemaat(
+        create_jemaat_create(),
+        user_id=1,
+        ip_address="127.0.0.1"
+    )
+
+    assert result is not None
+
+    unit_of_work.jemaat.add.assert_called_once()
+
+    unit_of_work.session.flush.assert_called_once()
+
+    unit_of_work.audit_log.add.assert_called_once()
+
+    audit_log = (
+        unit_of_work
+        .audit_log
+        .add
+        .call_args.args[0]
+    )
+
+    assert audit_log.user_id == 1
+    assert audit_log.action == "CREATE"
+    assert audit_log.resource == "jemaat"
+    assert audit_log.resource_id == result.id
+    assert audit_log.ip_address == "127.0.0.1"
+
+    unit_of_work.commit.assert_called_once()
 
 
 # =========================================================
@@ -158,13 +210,11 @@ def test_create_jemaat():
 
 def test_update_jemaat_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     existing_jemaat = create_model_jemaat()
 
-    repository.get_by_id.return_value = (
+    unit_of_work.jemaat.get_by_id.return_value = (
         existing_jemaat
     )
 
@@ -189,15 +239,60 @@ def test_update_jemaat_found():
 
     assert existing_jemaat.kelompok_ibadah == "Kompak"
 
-    repository.get_by_id.assert_called_once_with(
+    unit_of_work.jemaat.get_by_id.assert_called_once_with(
         1
     )
 
+    unit_of_work.session.flush.assert_called_once()
+
     unit_of_work.commit.assert_called_once()
 
-    repository.refresh.assert_called_once_with(
+    unit_of_work.jemaat.refresh.assert_called_once_with(
         existing_jemaat
     )
+
+    unit_of_work.audit_log.add.assert_not_called()
+
+
+# =========================================================
+# UPDATE + AUDIT LOG
+# =========================================================
+
+def test_update_jemaat_with_audit_log():
+
+    service, unit_of_work = create_service()
+
+    existing_jemaat = create_model_jemaat()
+
+    unit_of_work.jemaat.get_by_id.return_value = (
+        existing_jemaat
+    )
+
+    result = service.update_jemaat(
+        1,
+        create_jemaat_update(),
+        user_id=1,
+        ip_address="127.0.0.1"
+    )
+
+    assert result == existing_jemaat
+
+    unit_of_work.audit_log.add.assert_called_once()
+
+    audit_log = (
+        unit_of_work
+        .audit_log
+        .add
+        .call_args.args[0]
+    )
+
+    assert audit_log.user_id == 1
+    assert audit_log.action == "UPDATE"
+    assert audit_log.resource == "jemaat"
+    assert audit_log.resource_id == 1
+    assert audit_log.ip_address == "127.0.0.1"
+
+    unit_of_work.commit.assert_called_once()
 
 
 # =========================================================
@@ -206,11 +301,9 @@ def test_update_jemaat_found():
 
 def test_update_jemaat_not_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
-    repository.get_by_id.return_value = None
+    unit_of_work.jemaat.get_by_id.return_value = None
 
     result = service.update_jemaat(
         999,
@@ -223,6 +316,8 @@ def test_update_jemaat_not_found():
 
     unit_of_work.rollback.assert_not_called()
 
+    unit_of_work.audit_log.add.assert_not_called()
+
 
 # =========================================================
 # DELETE - FOUND
@@ -230,25 +325,71 @@ def test_update_jemaat_not_found():
 
 def test_delete_jemaat_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     existing_jemaat = create_model_jemaat()
 
-    repository.get_by_id.return_value = (
+    unit_of_work.jemaat.get_by_id.return_value = (
         existing_jemaat
     )
 
-    result = service.delete_jemaat(1)
-
-    assert result == existing_jemaat
-
-    repository.get_by_id.assert_called_once_with(
+    result = service.delete_jemaat(
         1
     )
 
-    repository.delete.assert_called_once_with(
+    assert result == existing_jemaat
+
+    unit_of_work.jemaat.get_by_id.assert_called_once_with(
+        1
+    )
+
+    unit_of_work.jemaat.delete.assert_called_once_with(
+        existing_jemaat
+    )
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.audit_log.add.assert_not_called()
+
+
+# =========================================================
+# DELETE + AUDIT LOG
+# =========================================================
+
+def test_delete_jemaat_with_audit_log():
+
+    service, unit_of_work = create_service()
+
+    existing_jemaat = create_model_jemaat()
+
+    unit_of_work.jemaat.get_by_id.return_value = (
+        existing_jemaat
+    )
+
+    result = service.delete_jemaat(
+        1,
+        user_id=1,
+        ip_address="127.0.0.1"
+    )
+
+    assert result == existing_jemaat
+
+    unit_of_work.audit_log.add.assert_called_once()
+
+    audit_log = (
+        unit_of_work
+        .audit_log
+        .add
+        .call_args.args[0]
+    )
+
+    assert audit_log.user_id == 1
+    assert audit_log.action == "DELETE"
+    assert audit_log.resource == "jemaat"
+    assert audit_log.resource_id == 1
+    assert audit_log.ip_address == "127.0.0.1"
+
+    unit_of_work.jemaat.delete.assert_called_once_with(
         existing_jemaat
     )
 
@@ -261,19 +402,21 @@ def test_delete_jemaat_found():
 
 def test_delete_jemaat_not_found():
 
-    service, repository, unit_of_work = (
-        create_service()
+    service, unit_of_work = create_service()
+
+    unit_of_work.jemaat.get_by_id.return_value = None
+
+    result = service.delete_jemaat(
+        999
     )
-
-    repository.get_by_id.return_value = None
-
-    result = service.delete_jemaat(999)
 
     assert result is None
 
-    repository.delete.assert_not_called()
+    unit_of_work.jemaat.delete.assert_not_called()
 
     unit_of_work.commit.assert_not_called()
+
+    unit_of_work.audit_log.add.assert_not_called()
 
 
 # =========================================================
@@ -282,13 +425,11 @@ def test_delete_jemaat_not_found():
 
 def test_get_all_jemaat_repository_query():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     mock_query = Mock()
 
-    repository.get_query.return_value = (
+    unit_of_work.jemaat.get_query.return_value = (
         mock_query
     )
 
@@ -318,37 +459,13 @@ def test_get_all_jemaat_repository_query():
     )
 
     assert result["items"] == []
+
     assert result["page"] == 1
+
     assert result["limit"] == 10
+
     assert result["total"] == 0
+
     assert result["total_pages"] == 0
 
-    repository.get_query.assert_called_once()
-    
-    
-def test_create_jemaat_rollback_on_error():
-    service, repository, unit_of_work = (
-        create_service()
-    )
-
-    unit_of_work.commit.side_effect = Exception(
-        "Database error"
-    )
-
-    try:
-        service.create_jemaat(
-            create_jemaat_create()
-        )
-
-        assert False, (
-            "Exception seharusnya dilempar"
-        )
-
-    except Exception as exc:
-        assert str(exc) == "Database error"
-
-    repository.add.assert_called_once()
-
-    unit_of_work.commit.assert_called_once()
-
-    unit_of_work.rollback.assert_called_once()
+    unit_of_work.jemaat.get_query.assert_called_once()

@@ -16,6 +16,7 @@ from main import app, get_db
 
 from models.user import User
 from models.jemaat import Jemaat
+from models.audit_log import AuditLog
 
 
 # =========================================================
@@ -79,6 +80,7 @@ def db():
         # BERSIHKAN DATA TEST
         # =================================================
 
+        db_session.query(AuditLog).delete()
         db_session.query(Jemaat).delete()
         db_session.query(User).delete()
 

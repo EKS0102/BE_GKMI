@@ -1,4 +1,4 @@
-from models.jemaat import Jemaat
+from datetime import datetime, UTC
 
 from schemas.jemaat import (
     JemaatCreate,
@@ -9,7 +9,9 @@ from schemas.jemaat import (
     KelompokIbadah
 )
 
-from repositories.jemaat_repository import JemaatRepository
+from models.jemaat import Jemaat
+from models.audit_log import AuditLog
+
 from unit_of_work import UnitOfWork
 
 
@@ -21,14 +23,13 @@ class JemaatService:
 
     def __init__(
         self,
-        repository: JemaatRepository,
         unit_of_work: UnitOfWork
     ):
-        self.repository = repository
         self.unit_of_work = unit_of_work
 
     # =====================================================
     # GET SEMUA JEMAAT
+    # Pagination + Search + Filter + Sorting
     # =====================================================
 
     def get_all_jemaat(
@@ -43,7 +44,7 @@ class JemaatService:
         sort_by: str = "id",
         sort_order: str = "asc"
     ):
-        query = self.repository.get_query()
+        query = self.unit_of_work.jemaat.get_query()
 
         if search:
             search_value = f"%{search}%"
@@ -84,7 +85,9 @@ class JemaatService:
             "kelompok_ibadah": Jemaat.kelompok_ibadah
         }
 
-        sort_column = allowed_sort_fields.get(sort_by)
+        sort_column = allowed_sort_fields.get(
+            sort_by
+        )
 
         if sort_column is None:
             raise ValueError(
@@ -137,17 +140,19 @@ class JemaatService:
         self,
         jemaat_id: int
     ):
-        return self.repository.get_by_id(
+        return self.unit_of_work.jemaat.get_by_id(
             jemaat_id
         )
 
     # =====================================================
-    # CREATE
+    # CREATE JEMAAT + AUDIT LOG
     # =====================================================
 
     def create_jemaat(
         self,
-        jemaat: JemaatCreate
+        jemaat: JemaatCreate,
+        user_id: int | None = None,
+        ip_address: str | None = None
     ):
         data_baru = Jemaat(
             nama_panggilan=jemaat.nama_panggilan,
@@ -161,11 +166,62 @@ class JemaatService:
         )
 
         try:
-            self.repository.add(data_baru)
+            # =================================================
+            # 1. ADD JEMAAT
+            # =================================================
+
+            self.unit_of_work.jemaat.add(
+                data_baru
+            )
+
+            # =================================================
+            # 2. FLUSH
+            # =================================================
+            #
+            # Kita membutuhkan ID Jemaat sebelum membuat
+            # AuditLog.
+            #
+            # Flush mengirim INSERT ke database tanpa
+            # melakukan COMMIT.
+            #
+
+            self.unit_of_work.session.flush()
+
+            # =================================================
+            # 3. ADD AUDIT LOG
+            # =================================================
+
+            if user_id is not None:
+                audit_log = AuditLog(
+                    user_id=user_id,
+                    action="CREATE",
+                    resource="jemaat",
+                    resource_id=data_baru.id,
+                    description=(
+                        f"Menambahkan data jemaat "
+                        f"{data_baru.nama_lengkap}"
+                    ),
+                    ip_address=ip_address,
+                    created_at=datetime.now(UTC)
+                )
+
+                self.unit_of_work.audit_log.add(
+                    audit_log
+                )
+
+            # =================================================
+            # 4. COMMIT SEMUA
+            # =================================================
 
             self.unit_of_work.commit()
 
-            self.repository.refresh(data_baru)
+            # =================================================
+            # 5. REFRESH
+            # =================================================
+
+            self.unit_of_work.jemaat.refresh(
+                data_baru
+            )
 
             return data_baru
 
@@ -179,7 +235,9 @@ class JemaatService:
 
     def create_jemaat_bulk(
         self,
-        jemaat_list: list[JemaatCreate]
+        jemaat_list: list[JemaatCreate],
+        user_id: int | None = None,
+        ip_address: str | None = None
     ):
         data_baru = []
 
@@ -198,11 +256,57 @@ class JemaatService:
             data_baru.append(data)
 
         try:
-            self.repository.add_many(data_baru)
+            # =================================================
+            # ADD SEMUA JEMAAT
+            # =================================================
+
+            self.unit_of_work.jemaat.add_many(
+                data_baru
+            )
+
+            # =================================================
+            # FLUSH
+            # =================================================
+
+            self.unit_of_work.session.flush()
+
+            # =================================================
+            # ADD AUDIT LOG
+            # =================================================
+
+            if user_id is not None:
+                for data in data_baru:
+
+                    audit_log = AuditLog(
+                        user_id=user_id,
+                        action="CREATE",
+                        resource="jemaat",
+                        resource_id=data.id,
+                        description=(
+                            f"Menambahkan data jemaat "
+                            f"{data.nama_lengkap}"
+                        ),
+                        ip_address=ip_address,
+                        created_at=datetime.now(UTC)
+                    )
+
+                    self.unit_of_work.audit_log.add(
+                        audit_log
+                    )
+
+            # =================================================
+            # COMMIT
+            # =================================================
 
             self.unit_of_work.commit()
 
-            self.repository.refresh_many(data_baru)
+            # =================================================
+            # REFRESH
+            # =================================================
+
+            self.unit_of_work.jemaat.refresh_many(
+                data_baru
+            )
 
             return data_baru
 
@@ -217,9 +321,11 @@ class JemaatService:
     def update_jemaat(
         self,
         jemaat_id: int,
-        jemaat: JemaatUpdate
+        jemaat: JemaatUpdate,
+        user_id: int | None = None,
+        ip_address: str | None = None
     ):
-        data = self.repository.get_by_id(
+        data = self.unit_of_work.jemaat.get_by_id(
             jemaat_id
         )
 
@@ -227,18 +333,75 @@ class JemaatService:
             return None
 
         try:
-            data.nama_panggilan = jemaat.nama_panggilan
-            data.nama_lengkap = jemaat.nama_lengkap
-            data.jenis_kelamin = jemaat.jenis_kelamin.value
-            data.tanggal_lahir = jemaat.tanggal_lahir
-            data.domisili = jemaat.domisili
-            data.status_jemaat = jemaat.status_jemaat.value
-            data.status_diakonia = jemaat.status_diakonia.value
-            data.kelompok_ibadah = jemaat.kelompok_ibadah.value
+            data.nama_panggilan = (
+                jemaat.nama_panggilan
+            )
+
+            data.nama_lengkap = (
+                jemaat.nama_lengkap
+            )
+
+            data.jenis_kelamin = (
+                jemaat.jenis_kelamin.value
+            )
+
+            data.tanggal_lahir = (
+                jemaat.tanggal_lahir
+            )
+
+            data.domisili = (
+                jemaat.domisili
+            )
+
+            data.status_jemaat = (
+                jemaat.status_jemaat.value
+            )
+
+            data.status_diakonia = (
+                jemaat.status_diakonia.value
+            )
+
+            data.kelompok_ibadah = (
+                jemaat.kelompok_ibadah.value
+            )
+
+            # =================================================
+            # FLUSH UPDATE
+            # =================================================
+
+            self.unit_of_work.session.flush()
+
+            # =================================================
+            # AUDIT LOG
+            # =================================================
+
+            if user_id is not None:
+                audit_log = AuditLog(
+                    user_id=user_id,
+                    action="UPDATE",
+                    resource="jemaat",
+                    resource_id=data.id,
+                    description=(
+                        f"Memperbarui data jemaat "
+                        f"{data.nama_lengkap}"
+                    ),
+                    ip_address=ip_address,
+                    created_at=datetime.now(UTC)
+                )
+
+                self.unit_of_work.audit_log.add(
+                    audit_log
+                )
+
+            # =================================================
+            # COMMIT
+            # =================================================
 
             self.unit_of_work.commit()
 
-            self.repository.refresh(data)
+            self.unit_of_work.jemaat.refresh(
+                data
+            )
 
             return data
 
@@ -252,9 +415,11 @@ class JemaatService:
 
     def delete_jemaat(
         self,
-        jemaat_id: int
+        jemaat_id: int,
+        user_id: int | None = None,
+        ip_address: str | None = None
     ):
-        data = self.repository.get_by_id(
+        data = self.unit_of_work.jemaat.get_by_id(
             jemaat_id
         )
 
@@ -262,7 +427,43 @@ class JemaatService:
             return None
 
         try:
-            self.repository.delete(data)
+            # =================================================
+            # AUDIT LOG SEBELUM DELETE
+            # =================================================
+            #
+            # Data Jemaat masih ada sehingga nama lengkap
+            # masih bisa digunakan dalam description.
+            #
+
+            if user_id is not None:
+                audit_log = AuditLog(
+                    user_id=user_id,
+                    action="DELETE",
+                    resource="jemaat",
+                    resource_id=data.id,
+                    description=(
+                        f"Menghapus data jemaat "
+                        f"{data.nama_lengkap}"
+                    ),
+                    ip_address=ip_address,
+                    created_at=datetime.now(UTC)
+                )
+
+                self.unit_of_work.audit_log.add(
+                    audit_log
+                )
+
+            # =================================================
+            # DELETE JEMAAT
+            # =================================================
+
+            self.unit_of_work.jemaat.delete(
+                data
+            )
+
+            # =================================================
+            # COMMIT
+            # =================================================
 
             self.unit_of_work.commit()
 

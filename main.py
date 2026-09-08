@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from database.database import SessionLocal
 
 from unit_of_work import UnitOfWork
+from services.jemaat_service import JemaatService
 
 from schemas.jemaat import (
     JemaatCreate,
@@ -101,16 +102,11 @@ def get_db():
 def get_jemaat_service(
     db: Session = Depends(get_db)
 ):
-    repository = JemaatRepository(
-        db
-    )
-
     unit_of_work = UnitOfWork(
         db
     )
 
     return JemaatService(
-        repository,
         unit_of_work
     )
 

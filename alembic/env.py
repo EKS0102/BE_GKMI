@@ -10,6 +10,7 @@ from database.database import Base
 # Import model agar masuk ke Base.metadata
 from models.jemaat import Jemaat
 from models.user import User
+from models.audit_log import AuditLog
 
 
 # =========================================================
@@ -39,7 +40,9 @@ target_metadata = Base.metadata
 # =========================================================
 
 def run_migrations_offline() -> None:
-    url = DATABASE_URL
+    url = config.get_main_option(
+        "sqlalchemy.url"
+    ) or DATABASE_URL
 
     context.configure(
         url=url,
@@ -64,7 +67,11 @@ def run_migrations_online() -> None:
         {}
     )
 
-    configuration["sqlalchemy.url"] = DATABASE_URL
+    database_url = configuration.get(
+        "sqlalchemy.url"
+    ) or DATABASE_URL
+
+    configuration["sqlalchemy.url"] = database_url
 
     connectable = engine_from_config(
         configuration,
