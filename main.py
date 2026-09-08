@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from database.database import Base, engine, SessionLocal
+
+from database.database import SessionLocal
 
 from schemas.jemaat import (
     JemaatCreate,
@@ -26,19 +28,20 @@ from schemas.user import (
     TokenResponse
 )
 
+from repositories.jemaat_repository import (
+    JemaatRepository
+)
+
+from repositories.user_repository import (
+    UserRepository
+)
+
 from services.jemaat_service import (
-    get_all_jemaat,
-    get_jemaat_by_id,
-    create_jemaat,
-    create_jemaat_bulk,
-    update_jemaat,
-    delete_jemaat
+    JemaatService
 )
 
 from services.auth_service import (
-    get_user_by_username,
-    get_user_by_email,
-    create_user
+    AuthService
 )
 
 from auth.security import create_access_token
@@ -76,7 +79,8 @@ password_hash = PasswordHash.recommended()
 # DATABASE
 # =========================================================
 
-# Base.metadata.create_all(bind=engine)
+# Schema database dikelola oleh Alembic.
+# Base.metadata.create_all() sengaja tidak digunakan.
 
 
 def get_db():
@@ -86,6 +90,38 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# =========================================================
+# JEMAAT SERVICE DEPENDENCY
+# =========================================================
+
+def get_jemaat_service(
+    db: Session = Depends(get_db)
+):
+    repository = JemaatRepository(
+        db
+    )
+
+    return JemaatService(
+        repository
+    )
+
+
+# =========================================================
+# AUTH SERVICE DEPENDENCY
+# =========================================================
+
+def get_auth_service(
+    db: Session = Depends(get_db)
+):
+    repository = UserRepository(
+        db
+    )
+
+    return AuthService(
+        repository
+    )
 
 
 # =========================================================
@@ -133,10 +169,6 @@ def home():
 # AUTH - REGISTER
 # =========================================================
 
-# =========================================================
-# AUTH - REGISTER
-# =========================================================
-
 @app.post(
     "/auth/register",
     response_model=UserResponse,
@@ -155,7 +187,9 @@ def home():
 )
 def register(
     data: RegisterRequest,
-    db: Session = Depends(get_db)
+    service: AuthService = Depends(
+        get_auth_service
+    )
 ):
     logger.info(
         f"Registrasi user: {data.username}"
@@ -165,8 +199,7 @@ def register(
     # CEK USERNAME
     # =====================================================
 
-    existing_user = get_user_by_username(
-        db,
+    existing_user = service.get_user_by_username(
         data.username
     )
 
@@ -187,8 +220,7 @@ def register(
 
     email_value = str(data.email)
 
-    existing_email = get_user_by_email(
-        db,
+    existing_email = service.get_user_by_email(
         email_value
     )
 
@@ -216,8 +248,7 @@ def register(
     # =====================================================
 
     try:
-        user = create_user(
-            db=db,
+        user = service.create_user(
             username=data.username,
             password_hash=hashed_password,
             role=data.role.value,
@@ -241,6 +272,7 @@ def register(
 
     return user
 
+
 # =========================================================
 # AUTH - LOGIN
 # =========================================================
@@ -263,18 +295,22 @@ def register(
 )
 def login(
     data: LoginRequest,
-    db: Session = Depends(get_db)
+    service: AuthService = Depends(
+        get_auth_service
+    )
 ):
     logger.info(
         f"Percobaan login username: {data.username}"
     )
 
-    user = get_user_by_username(
-        db,
+    user = service.get_user_by_username(
         data.username
     )
 
-    # Username tidak ditemukan
+    # =====================================================
+    # USERNAME TIDAK DITEMUKAN
+    # =====================================================
+
     if user is None:
         logger.warning(
             f"Login gagal, username tidak ditemukan: "
@@ -286,7 +322,10 @@ def login(
             detail="Username atau password salah"
         )
 
-    # User tidak aktif
+    # =====================================================
+    # USER TIDAK AKTIF
+    # =====================================================
+
     if not user.is_active:
         logger.warning(
             f"Login ditolak, user tidak aktif: "
@@ -298,7 +337,10 @@ def login(
             detail="User tidak aktif"
         )
 
-    # Password salah
+    # =====================================================
+    # PASSWORD SALAH
+    # =====================================================
+
     if not password_hash.verify(
         data.password,
         user.password_hash
@@ -313,7 +355,10 @@ def login(
             detail="Username atau password salah"
         )
 
-    # Buat JWT
+    # =====================================================
+    # BUAT JWT
+    # =====================================================
+
     access_token = create_access_token(
         {
             "sub": user.username,
@@ -362,16 +407,15 @@ def get_jemaat(
     page: int = 1,
     limit: int = 10,
     search: str | None = None,
-
     jenis_kelamin: JenisKelamin | None = None,
     status_jemaat: StatusJemaat | None = None,
     status_diakonia: StatusDiakonia | None = None,
     kelompok_ibadah: KelompokIbadah | None = None,
-
     sort_by: SortBy = SortBy.ID,
     sort_order: SortOrder = SortOrder.ASC,
-
-    db: Session = Depends(get_db),
+    service: JemaatService = Depends(
+        get_jemaat_service
+    ),
     current_user: dict = Depends(
         require_authenticated
     )
@@ -410,9 +454,12 @@ def get_jemaat(
         f"sort_order={sort_order.value}"
     )
 
+    # =====================================================
+    # SERVICE
+    # =====================================================
+
     try:
-        return get_all_jemaat(
-            db=db,
+        return service.get_all_jemaat(
             page=page,
             limit=limit,
             search=search,
@@ -420,8 +467,8 @@ def get_jemaat(
             status_jemaat=status_jemaat,
             status_diakonia=status_diakonia,
             kelompok_ibadah=kelompok_ibadah,
-            sort_by=sort_by,
-            sort_order=sort_order
+            sort_by=sort_by.value,
+            sort_order=sort_order.value
         )
 
     except ValueError as exc:
@@ -462,7 +509,9 @@ def get_jemaat(
 )
 def get_jemaat_detail(
     jemaat_id: int,
-    db: Session = Depends(get_db),
+    service: JemaatService = Depends(
+        get_jemaat_service
+    ),
     current_user: dict = Depends(
         require_authenticated
     )
@@ -472,8 +521,7 @@ def get_jemaat_detail(
         f"mencari jemaat dengan ID {jemaat_id}"
     )
 
-    data = get_jemaat_by_id(
-        db,
+    data = service.get_jemaat_by_id(
         jemaat_id
     )
 
@@ -518,7 +566,9 @@ def get_jemaat_detail(
 )
 def create_jemaat_api(
     jemaat: JemaatCreate,
-    db: Session = Depends(get_db),
+    service: JemaatService = Depends(
+        get_jemaat_service
+    ),
     current_user: dict = Depends(
         require_staff
     )
@@ -529,8 +579,7 @@ def create_jemaat_api(
         f"{jemaat.nama_lengkap}"
     )
 
-    data = create_jemaat(
-        db,
+    data = service.create_jemaat(
         jemaat
     )
 
@@ -567,7 +616,9 @@ def create_jemaat_api(
 )
 def create_jemaat_bulk_api(
     jemaat_list: list[JemaatCreate],
-    db: Session = Depends(get_db),
+    service: JemaatService = Depends(
+        get_jemaat_service
+    ),
     current_user: dict = Depends(
         require_staff
     )
@@ -594,8 +645,7 @@ def create_jemaat_bulk_api(
     )
 
     try:
-        data = create_jemaat_bulk(
-            db,
+        data = service.create_jemaat_bulk(
             jemaat_list
         )
 
@@ -649,7 +699,9 @@ def create_jemaat_bulk_api(
 def update_jemaat_api(
     jemaat_id: int,
     jemaat: JemaatUpdate,
-    db: Session = Depends(get_db),
+    service: JemaatService = Depends(
+        get_jemaat_service
+    ),
     current_user: dict = Depends(
         require_staff
     )
@@ -659,8 +711,7 @@ def update_jemaat_api(
         f"mengubah jemaat dengan ID {jemaat_id}"
     )
 
-    data = update_jemaat(
-        db,
+    data = service.update_jemaat(
         jemaat_id,
         jemaat
     )
@@ -708,7 +759,9 @@ def update_jemaat_api(
 )
 def delete_jemaat_api(
     jemaat_id: int,
-    db: Session = Depends(get_db),
+    service: JemaatService = Depends(
+        get_jemaat_service
+    ),
     current_user: dict = Depends(
         require_admin
     )
@@ -718,8 +771,7 @@ def delete_jemaat_api(
         f"menghapus jemaat dengan ID {jemaat_id}"
     )
 
-    data = delete_jemaat(
-        db,
+    data = service.delete_jemaat(
         jemaat_id
     )
 
