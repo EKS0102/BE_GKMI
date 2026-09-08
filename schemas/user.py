@@ -60,4 +60,24 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
+    
+# =========================================================
+# TOKEN RESPONSE
+# Digunakan setelah login berhasil
+# =========================================================
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+
+
+# =========================================================
+# REFRESH TOKEN REQUEST
+# Digunakan oleh POST /auth/refresh
+# =========================================================
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

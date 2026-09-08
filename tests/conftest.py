@@ -1,5 +1,5 @@
-import os
 from pathlib import Path
+import os
 
 import pytest
 from dotenv import load_dotenv
@@ -11,12 +11,13 @@ from sqlalchemy.orm import sessionmaker
 from alembic import command
 from alembic.config import Config
 
-from database.database import Base
-from main import app, get_db
+from main import app
+from dependencies import get_db
 
 from models.user import User
 from models.jemaat import Jemaat
 from models.audit_log import AuditLog
+from models.refresh_token import RefreshToken
 
 
 # =========================================================
@@ -30,7 +31,9 @@ load_dotenv()
 # TEST DATABASE
 # =========================================================
 
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL"
+)
 
 if not TEST_DATABASE_URL:
     raise ValueError(
@@ -55,9 +58,13 @@ TestingSessionLocal = sessionmaker(
 # ALEMBIC CONFIG
 # =========================================================
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(
+    __file__
+).resolve().parent.parent
 
-ALEMBIC_INI_PATH = BASE_DIR / "alembic.ini"
+ALEMBIC_INI_PATH = (
+    BASE_DIR / "alembic.ini"
+)
 
 
 # =========================================================
@@ -73,6 +80,21 @@ password_hash = PasswordHash.recommended()
 
 @pytest.fixture(scope="function")
 def db():
+    """
+    Menyediakan database session untuk setiap test.
+
+    Data dibersihkan sebelum test dimulai.
+
+    Urutan penghapusan:
+        RefreshToken
+            ↓
+        AuditLog
+            ↓
+        Jemaat
+            ↓
+        User
+    """
+
     db_session = TestingSessionLocal()
 
     try:
@@ -80,11 +102,31 @@ def db():
         # BERSIHKAN DATA TEST
         # =================================================
 
-        db_session.query(AuditLog).delete()
-        db_session.query(Jemaat).delete()
-        db_session.query(User).delete()
+        # RefreshToken memiliki FK ke users
+        db_session.query(
+            RefreshToken
+        ).delete()
+
+        # AuditLog memiliki FK ke users
+        db_session.query(
+            AuditLog
+        ).delete()
+
+        # Jemaat tidak memiliki FK ke users
+        db_session.query(
+            Jemaat
+        ).delete()
+
+        # User dihapus paling terakhir
+        db_session.query(
+            User
+        ).delete()
 
         db_session.commit()
+
+        # =================================================
+        # TEST
+        # =================================================
 
         yield db_session
 
@@ -98,20 +140,29 @@ def db():
 # Dijalankan sekali sebelum seluruh test session.
 # =========================================================
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(
+    scope="session",
+    autouse=True
+)
 def migrate_test_database():
 
     alembic_config = Config(
         str(ALEMBIC_INI_PATH)
     )
 
-    # Arahkan Alembic ke database testing
+    # =====================================================
+    # ARAHKAN ALEMBIC KE TEST DATABASE
+    # =====================================================
+
     alembic_config.set_main_option(
         "sqlalchemy.url",
         TEST_DATABASE_URL
     )
 
-    # Pastikan migration dijalankan sampai head
+    # =====================================================
+    # MIGRATION SAMPAI HEAD
+    # =====================================================
+
     command.upgrade(
         alembic_config,
         "head"
@@ -128,12 +179,16 @@ def migrate_test_database():
 def client(db):
 
     def override_get_db():
+
         try:
             yield db
+
         finally:
             pass
 
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[
+        get_db
+    ] = override_get_db
 
     with TestClient(app) as test_client:
         yield test_client
@@ -152,6 +207,10 @@ def create_user(
     role: str,
     email: str
 ):
+    """
+    Membuat user untuk kebutuhan test.
+    """
+
     hashed_password = password_hash.hash(
         password
     )
@@ -256,7 +315,9 @@ def get_token(
 
     assert response.status_code == 200
 
-    return response.json()["access_token"]
+    return response.json()[
+        "access_token"
+    ]
 
 
 # =========================================================

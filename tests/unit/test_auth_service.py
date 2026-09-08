@@ -1,9 +1,15 @@
-from unittest.mock import Mock
+from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
 
+import pytest
 from sqlalchemy.exc import IntegrityError
 
 from models.user import User
-from services.auth_service import AuthService
+from models.refresh_token import RefreshToken
+from services.auth_service import (
+    AuthService,
+    REFRESH_TOKEN_EXPIRE_DAYS
+)
 
 
 # =========================================================
@@ -28,10 +34,6 @@ def create_user_model():
 def create_service():
     """
     Membuat AuthService menggunakan Mock UnitOfWork.
-
-    UnitOfWork memiliki:
-    - user repository
-    - refresh_token repository
     """
 
     unit_of_work = Mock()
@@ -196,7 +198,7 @@ def test_create_user_integrity_error():
         Exception("duplicate key")
     )
 
-    try:
+    with pytest.raises(IntegrityError):
 
         service.create_user(
             username="admin",
@@ -205,14 +207,6 @@ def test_create_user_integrity_error():
             email="admin@test.com"
         )
 
-        assert False, (
-            "IntegrityError seharusnya dilempar"
-        )
-
-    except IntegrityError:
-
-        pass
-
     unit_of_work.user.add.assert_called_once()
 
     unit_of_work.commit.assert_called_once()
@@ -220,3 +214,401 @@ def test_create_user_integrity_error():
     unit_of_work.rollback.assert_called_once()
 
     unit_of_work.user.refresh.assert_not_called()
+
+
+# =========================================================
+# CREATE REFRESH TOKEN
+# =========================================================
+
+@patch(
+    "services.auth_service.generate_refresh_token"
+)
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_create_refresh_token(
+    mock_hash_refresh_token,
+    mock_generate_refresh_token
+):
+
+    service, unit_of_work = create_service()
+
+    mock_generate_refresh_token.return_value = (
+        "raw-refresh-token"
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    before = datetime.now(UTC)
+
+    result = service.create_refresh_token(
+        user_id=1,
+        ip_address="127.0.0.1"
+    )
+
+    after = datetime.now(UTC)
+
+    # =====================================================
+    # TOKEN ASLI DIKEMBALIKAN
+    # =====================================================
+
+    assert result == "raw-refresh-token"
+
+    # =====================================================
+    # GENERATE TOKEN
+    # =====================================================
+
+    mock_generate_refresh_token.assert_called_once()
+
+    # =====================================================
+    # HASH TOKEN
+    # =====================================================
+
+    mock_hash_refresh_token.assert_called_once_with(
+        "raw-refresh-token"
+    )
+
+    # =====================================================
+    # REPOSITORY ADD
+    # =====================================================
+
+    unit_of_work.refresh_token.add.assert_called_once()
+
+    refresh_token = (
+        unit_of_work
+        .refresh_token
+        .add
+        .call_args
+        .args[0]
+    )
+
+    assert isinstance(
+        refresh_token,
+        RefreshToken
+    )
+
+    assert refresh_token.user_id == 1
+
+    assert refresh_token.token_hash == (
+        "hashed-refresh-token"
+    )
+
+    assert refresh_token.revoked_at is None
+
+    assert refresh_token.ip_address == (
+        "127.0.0.1"
+    )
+
+    # =====================================================
+    # CREATED AT
+    # =====================================================
+
+    assert before <= refresh_token.created_at <= after
+
+    # =====================================================
+    # EXPIRES AT
+    # =====================================================
+
+    expected_expiry_min = (
+        before
+        + timedelta(
+            days=REFRESH_TOKEN_EXPIRE_DAYS
+        )
+    )
+
+    expected_expiry_max = (
+        after
+        + timedelta(
+            days=REFRESH_TOKEN_EXPIRE_DAYS
+        )
+    )
+
+    assert (
+        expected_expiry_min
+        <= refresh_token.expires_at
+        <= expected_expiry_max
+    )
+
+    # =====================================================
+    # COMMIT
+    # =====================================================
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# CREATE REFRESH TOKEN - INTEGRITY ERROR
+# =========================================================
+
+@patch(
+    "services.auth_service.generate_refresh_token"
+)
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_create_refresh_token_integrity_error(
+    mock_hash_refresh_token,
+    mock_generate_refresh_token
+):
+
+    service, unit_of_work = create_service()
+
+    mock_generate_refresh_token.return_value = (
+        "raw-refresh-token"
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    unit_of_work.commit.side_effect = IntegrityError(
+        "INSERT",
+        {},
+        Exception("duplicate key")
+    )
+
+    with pytest.raises(IntegrityError):
+
+        service.create_refresh_token(
+            user_id=1,
+            ip_address="127.0.0.1"
+        )
+
+    unit_of_work.refresh_token.add.assert_called_once()
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_called_once()
+    
+    
+    # =========================================================
+# LOGIN - SUCCESS
+# =========================================================
+
+@patch(
+    "services.auth_service.create_access_token"
+)
+@patch(
+    "services.auth_service.generate_refresh_token"
+)
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_login_success(
+    mock_hash_refresh_token,
+    mock_generate_refresh_token,
+    mock_create_access_token
+):
+    service, unit_of_work = create_service()
+
+    user = create_user_model()
+
+    unit_of_work.user.get_by_username.return_value = user
+
+    mock_create_access_token.return_value = (
+        "access-token"
+    )
+
+    mock_generate_refresh_token.return_value = (
+        "refresh-token"
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "refresh-token-hash"
+    )
+
+    # PasswordHash akan benar-benar memverifikasi password,
+    # jadi kita ganti menjadi Mock agar unit test fokus
+    # pada business logic AuthService.
+    service.password_hash = Mock()
+
+    service.password_hash.verify.return_value = True
+
+    result = service.login(
+        username="admin",
+        password="admin123",
+        ip_address="127.0.0.1"
+    )
+
+    assert result is not None
+
+    assert result["access_token"] == (
+        "access-token"
+    )
+
+    assert result["refresh_token"] == (
+        "refresh-token"
+    )
+
+    assert result["token_type"] == "bearer"
+
+    unit_of_work.user.get_by_username.assert_called_once_with(
+        "admin"
+    )
+
+    service.password_hash.verify.assert_called_once_with(
+        "admin123",
+        user.password_hash
+    )
+
+    mock_create_access_token.assert_called_once_with(
+        {
+            "sub": "admin",
+            "role": "admin"
+        }
+    )
+
+    unit_of_work.refresh_token.add.assert_called_once()
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# LOGIN - USER NOT FOUND
+# =========================================================
+
+def test_login_user_not_found():
+
+    service, unit_of_work = create_service()
+
+    unit_of_work.user.get_by_username.return_value = None
+
+    result = service.login(
+        username="tidakada",
+        password="password"
+    )
+
+    assert result is None
+
+    unit_of_work.user.get_by_username.assert_called_once_with(
+        "tidakada"
+    )
+
+    unit_of_work.refresh_token.add.assert_not_called()
+
+    unit_of_work.commit.assert_not_called()
+
+
+# =========================================================
+# LOGIN - USER INACTIVE
+# =========================================================
+
+def test_login_user_inactive():
+
+    service, unit_of_work = create_service()
+
+    user = create_user_model()
+
+    user.is_active = False
+
+    unit_of_work.user.get_by_username.return_value = user
+
+    result = service.login(
+        username="admin",
+        password="admin123"
+    )
+
+    assert result == "inactive"
+
+    unit_of_work.refresh_token.add.assert_not_called()
+
+    unit_of_work.commit.assert_not_called()
+
+
+# =========================================================
+# LOGIN - WRONG PASSWORD
+# =========================================================
+
+def test_login_wrong_password():
+
+    service, unit_of_work = create_service()
+
+    user = create_user_model()
+
+    unit_of_work.user.get_by_username.return_value = user
+
+    service.password_hash = Mock()
+
+    service.password_hash.verify.return_value = False
+
+    result = service.login(
+        username="admin",
+        password="wrong-password"
+    )
+
+    assert result is None
+
+    service.password_hash.verify.assert_called_once_with(
+        "wrong-password",
+        user.password_hash
+    )
+
+    unit_of_work.refresh_token.add.assert_not_called()
+
+    unit_of_work.commit.assert_not_called()
+
+
+# =========================================================
+# LOGIN - COMMIT ERROR
+# =========================================================
+
+@patch(
+    "services.auth_service.create_access_token"
+)
+@patch(
+    "services.auth_service.generate_refresh_token"
+)
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_login_commit_error(
+    mock_hash_refresh_token,
+    mock_generate_refresh_token,
+    mock_create_access_token
+):
+    service, unit_of_work = create_service()
+
+    user = create_user_model()
+
+    unit_of_work.user.get_by_username.return_value = user
+
+    service.password_hash = Mock()
+
+    service.password_hash.verify.return_value = True
+
+    mock_create_access_token.return_value = (
+        "access-token"
+    )
+
+    mock_generate_refresh_token.return_value = (
+        "refresh-token"
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "refresh-token-hash"
+    )
+
+    unit_of_work.commit.side_effect = IntegrityError(
+        "INSERT",
+        {},
+        Exception("database error")
+    )
+
+    with pytest.raises(IntegrityError):
+
+        service.login(
+            username="admin",
+            password="admin123"
+        )
+
+    unit_of_work.refresh_token.add.assert_called_once()
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_called_once()

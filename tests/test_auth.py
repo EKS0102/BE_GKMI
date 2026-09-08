@@ -55,3 +55,61 @@ def test_login_unknown_user(client):
     assert data["detail"] == (
         "Username atau password salah"
     )
+    
+# =========================================================
+# LOGIN - REFRESH TOKEN
+# =========================================================
+
+def test_login_returns_refresh_token(
+    client,
+    create_test_user,
+    db
+):
+    response = client.post(
+        "/auth/login",
+        json={
+            "username": "admin",
+            "password": "admin123"
+        }
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    # =====================================================
+    # CEK RESPONSE
+    # =====================================================
+
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
+
+    assert data["refresh_token"]
+
+    # =====================================================
+    # CEK DATABASE
+    # =====================================================
+
+    from models.refresh_token import RefreshToken
+
+    refresh_token = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.user_id
+            == create_test_user.id
+        )
+        .first()
+    )
+
+    assert refresh_token is not None
+
+    assert refresh_token.token_hash != (
+        data["refresh_token"]
+    )
+
+    assert refresh_token.revoked_at is None
+
+    assert refresh_token.expires_at > (
+        refresh_token.created_at
+    )

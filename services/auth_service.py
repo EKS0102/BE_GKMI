@@ -1,7 +1,27 @@
+from datetime import datetime, timedelta, UTC
+
 from sqlalchemy.exc import IntegrityError
 
+from pwdlib import PasswordHash
+
 from models.user import User
+from models.refresh_token import RefreshToken
+
 from unit_of_work import UnitOfWork
+
+from auth.refresh_token import (
+    generate_refresh_token,
+    hash_refresh_token
+)
+
+from auth.security import create_access_token
+
+
+# =========================================================
+# KONFIGURASI
+# =========================================================
+
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
 # =========================================================
@@ -24,6 +44,7 @@ class AuthService:
         unit_of_work: UnitOfWork
     ):
         self.unit_of_work = unit_of_work
+        self.password_hash = PasswordHash.recommended()
 
     # =====================================================
     # GET USER BY USERNAME
@@ -69,23 +90,11 @@ class AuthService:
         )
 
         try:
-            # =================================================
-            # ADD USER
-            # =================================================
-
             self.unit_of_work.user.add(
                 user
             )
 
-            # =================================================
-            # COMMIT
-            # =================================================
-
             self.unit_of_work.commit()
-
-            # =================================================
-            # REFRESH
-            # =================================================
 
             self.unit_of_work.user.refresh(
                 user
@@ -96,3 +105,184 @@ class AuthService:
         except IntegrityError:
             self.unit_of_work.rollback()
             raise
+
+    # =====================================================
+    # CREATE REFRESH TOKEN
+    # =====================================================
+
+    def create_refresh_token(
+        self,
+        user_id: int,
+        ip_address: str | None = None,
+        commit: bool = True
+    ) -> str:
+        """
+        Membuat refresh token.
+
+        Token asli dikembalikan ke client.
+        Hash token disimpan ke database.
+
+        commit=False digunakan ketika method dipanggil
+        sebagai bagian dari transaction yang lebih besar.
+        """
+
+        # =================================================
+        # GENERATE TOKEN ASLI
+        # =================================================
+
+        raw_token = generate_refresh_token()
+
+        # =================================================
+        # HASH TOKEN
+        # =================================================
+
+        token_hash = hash_refresh_token(
+            raw_token
+        )
+
+        # =================================================
+        # WAKTU
+        # =================================================
+
+        created_at = datetime.now(
+            UTC
+        )
+
+        expires_at = (
+            created_at
+            + timedelta(
+                days=REFRESH_TOKEN_EXPIRE_DAYS
+            )
+        )
+
+        # =================================================
+        # MODEL REFRESH TOKEN
+        # =================================================
+
+        refresh_token = RefreshToken(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            revoked_at=None,
+            created_at=created_at,
+            ip_address=ip_address
+        )
+
+        try:
+            self.unit_of_work.refresh_token.add(
+                refresh_token
+            )
+
+            # =================================================
+            # COMMIT OPSIONAL
+            # =================================================
+
+            if commit:
+                self.unit_of_work.commit()
+
+            return raw_token
+
+        except IntegrityError:
+            self.unit_of_work.rollback()
+            raise
+
+    # =====================================================
+    # LOGIN
+    # =====================================================
+
+    def login(
+        self,
+        username: str,
+        password: str,
+        ip_address: str | None = None
+    ):
+        """
+        Melakukan proses login.
+
+        Return:
+            dict
+                jika login berhasil
+
+            None
+                jika username/password salah
+
+            "inactive"
+                jika user tidak aktif
+        """
+
+        # =================================================
+        # CARI USER
+        # =================================================
+
+        user = self.unit_of_work.user.get_by_username(
+            username
+        )
+
+        # =================================================
+        # USER TIDAK DITEMUKAN
+        # =================================================
+
+        if user is None:
+            return None
+
+        # =================================================
+        # USER TIDAK AKTIF
+        # =================================================
+
+        if not user.is_active:
+            return "inactive"
+
+        # =================================================
+        # VERIFIKASI PASSWORD
+        # =================================================
+
+        if not self.password_hash.verify(
+            password,
+            user.password_hash
+        ):
+            return None
+
+        # =================================================
+        # BUAT ACCESS TOKEN
+        # =================================================
+
+        access_token = create_access_token(
+            {
+                "sub": user.username,
+                "role": user.role
+            }
+        )
+
+        # =================================================
+        # BUAT REFRESH TOKEN
+        #
+        # commit=False supaya refresh token tidak commit
+        # sendiri. Login akan melakukan satu commit di akhir.
+        # =================================================
+
+        refresh_token = self.create_refresh_token(
+            user_id=user.id,
+            ip_address=ip_address,
+            commit=False
+        )
+
+        # =================================================
+        # COMMIT SATU TRANSACTION
+        # =================================================
+
+        try:
+            self.unit_of_work.commit()
+
+        except IntegrityError:
+            self.unit_of_work.rollback()
+            raise
+
+        # =================================================
+        # RETURN TOKEN
+        # =================================================
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer"
+        }
