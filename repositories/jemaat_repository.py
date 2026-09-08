@@ -5,7 +5,10 @@ from models.jemaat import Jemaat
 
 class JemaatRepository:
     """
-    Repository untuk seluruh akses database Jemaat.
+    Repository untuk akses data Jemaat.
+
+    Repository hanya bertanggung jawab terhadap operasi data.
+    Transaction (commit / rollback) dikelola oleh UnitOfWork.
     """
 
     def __init__(self, db: Session):
@@ -61,20 +64,6 @@ class JemaatRepository:
         data: Jemaat
     ):
         self.db.delete(data)
-
-    # =====================================================
-    # COMMIT
-    # =====================================================
-
-    def commit(self):
-        self.db.commit()
-
-    # =====================================================
-    # ROLLBACK
-    # =====================================================
-
-    def rollback(self):
-        self.db.rollback()
 
     # =====================================================
     # REFRESH

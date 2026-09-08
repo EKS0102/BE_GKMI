@@ -10,6 +10,7 @@ from schemas.jemaat import (
 )
 
 from repositories.jemaat_repository import JemaatRepository
+from unit_of_work import UnitOfWork
 
 
 # =========================================================
@@ -20,13 +21,14 @@ class JemaatService:
 
     def __init__(
         self,
-        repository: JemaatRepository
+        repository: JemaatRepository,
+        unit_of_work: UnitOfWork
     ):
         self.repository = repository
+        self.unit_of_work = unit_of_work
 
     # =====================================================
     # GET SEMUA JEMAAT
-    # Pagination + Search + Filter + Sorting
     # =====================================================
 
     def get_all_jemaat(
@@ -43,10 +45,6 @@ class JemaatService:
     ):
         query = self.repository.get_query()
 
-        # =================================================
-        # SEARCH
-        # =================================================
-
         if search:
             search_value = f"%{search}%"
 
@@ -55,45 +53,25 @@ class JemaatService:
                 | Jemaat.nama_lengkap.ilike(search_value)
             )
 
-        # =================================================
-        # FILTER JENIS KELAMIN
-        # =================================================
-
         if jenis_kelamin:
             query = query.filter(
                 Jemaat.jenis_kelamin == jenis_kelamin.value
             )
-
-        # =================================================
-        # FILTER STATUS JEMAAT
-        # =================================================
 
         if status_jemaat:
             query = query.filter(
                 Jemaat.status_jemaat == status_jemaat.value
             )
 
-        # =================================================
-        # FILTER STATUS DIAKONIA
-        # =================================================
-
         if status_diakonia:
             query = query.filter(
                 Jemaat.status_diakonia == status_diakonia.value
             )
 
-        # =================================================
-        # FILTER KELOMPOK IBADAH
-        # =================================================
-
         if kelompok_ibadah:
             query = query.filter(
                 Jemaat.kelompok_ibadah == kelompok_ibadah.value
             )
-
-        # =================================================
-        # WHITELIST SORTING
-        # =================================================
 
         allowed_sort_fields = {
             "id": Jemaat.id,
@@ -106,19 +84,12 @@ class JemaatService:
             "kelompok_ibadah": Jemaat.kelompok_ibadah
         }
 
-        sort_column = allowed_sort_fields.get(
-            sort_by
-        )
+        sort_column = allowed_sort_fields.get(sort_by)
 
         if sort_column is None:
             raise ValueError(
-                f"Field sorting '{sort_by}' "
-                f"tidak diperbolehkan"
+                f"Field sorting '{sort_by}' tidak diperbolehkan"
             )
-
-        # =================================================
-        # SORT ORDER
-        # =================================================
 
         if sort_order == "asc":
             query = query.order_by(
@@ -135,15 +106,7 @@ class JemaatService:
                 "sort_order harus 'asc' atau 'desc'"
             )
 
-        # =================================================
-        # TOTAL
-        # =================================================
-
         total = query.count()
-
-        # =================================================
-        # PAGINATION
-        # =================================================
 
         offset = (page - 1) * limit
 
@@ -198,20 +161,16 @@ class JemaatService:
         )
 
         try:
-            self.repository.add(
-                data_baru
-            )
+            self.repository.add(data_baru)
 
-            self.repository.commit()
+            self.unit_of_work.commit()
 
-            self.repository.refresh(
-                data_baru
-            )
+            self.repository.refresh(data_baru)
 
             return data_baru
 
         except Exception:
-            self.repository.rollback()
+            self.unit_of_work.rollback()
             raise
 
     # =====================================================
@@ -239,20 +198,16 @@ class JemaatService:
             data_baru.append(data)
 
         try:
-            self.repository.add_many(
-                data_baru
-            )
+            self.repository.add_many(data_baru)
 
-            self.repository.commit()
+            self.unit_of_work.commit()
 
-            self.repository.refresh_many(
-                data_baru
-            )
+            self.repository.refresh_many(data_baru)
 
             return data_baru
 
         except Exception:
-            self.repository.rollback()
+            self.unit_of_work.rollback()
             raise
 
     # =====================================================
@@ -272,48 +227,23 @@ class JemaatService:
             return None
 
         try:
-            data.nama_panggilan = (
-                jemaat.nama_panggilan
-            )
+            data.nama_panggilan = jemaat.nama_panggilan
+            data.nama_lengkap = jemaat.nama_lengkap
+            data.jenis_kelamin = jemaat.jenis_kelamin.value
+            data.tanggal_lahir = jemaat.tanggal_lahir
+            data.domisili = jemaat.domisili
+            data.status_jemaat = jemaat.status_jemaat.value
+            data.status_diakonia = jemaat.status_diakonia.value
+            data.kelompok_ibadah = jemaat.kelompok_ibadah.value
 
-            data.nama_lengkap = (
-                jemaat.nama_lengkap
-            )
+            self.unit_of_work.commit()
 
-            data.jenis_kelamin = (
-                jemaat.jenis_kelamin.value
-            )
-
-            data.tanggal_lahir = (
-                jemaat.tanggal_lahir
-            )
-
-            data.domisili = (
-                jemaat.domisili
-            )
-
-            data.status_jemaat = (
-                jemaat.status_jemaat.value
-            )
-
-            data.status_diakonia = (
-                jemaat.status_diakonia.value
-            )
-
-            data.kelompok_ibadah = (
-                jemaat.kelompok_ibadah.value
-            )
-
-            self.repository.commit()
-
-            self.repository.refresh(
-                data
-            )
+            self.repository.refresh(data)
 
             return data
 
         except Exception:
-            self.repository.rollback()
+            self.unit_of_work.rollback()
             raise
 
     # =====================================================
@@ -332,14 +262,12 @@ class JemaatService:
             return None
 
         try:
-            self.repository.delete(
-                data
-            )
+            self.repository.delete(data)
 
-            self.repository.commit()
+            self.unit_of_work.commit()
 
             return data
 
         except Exception:
-            self.repository.rollback()
+            self.unit_of_work.rollback()
             raise

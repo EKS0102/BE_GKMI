@@ -66,12 +66,14 @@ def create_model_jemaat():
 def create_service():
 
     repository = Mock()
+    unit_of_work = Mock()
 
     service = JemaatService(
-        repository
+        repository,
+        unit_of_work
     )
 
-    return service, repository
+    return service, repository, unit_of_work
 
 
 # =========================================================
@@ -80,15 +82,15 @@ def create_service():
 
 def test_get_jemaat_by_id_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     expected = create_model_jemaat()
 
     repository.get_by_id.return_value = expected
 
-    result = service.get_jemaat_by_id(
-        1
-    )
+    result = service.get_jemaat_by_id(1)
 
     assert result == expected
 
@@ -103,13 +105,13 @@ def test_get_jemaat_by_id_found():
 
 def test_get_jemaat_by_id_not_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     repository.get_by_id.return_value = None
 
-    result = service.get_jemaat_by_id(
-        999
-    )
+    result = service.get_jemaat_by_id(999)
 
     assert result is None
 
@@ -124,7 +126,9 @@ def test_get_jemaat_by_id_not_found():
 
 def test_create_jemaat():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     result = service.create_jemaat(
         create_jemaat_create()
@@ -141,7 +145,7 @@ def test_create_jemaat():
 
     repository.add.assert_called_once()
 
-    repository.commit.assert_called_once()
+    unit_of_work.commit.assert_called_once()
 
     repository.refresh.assert_called_once_with(
         result
@@ -154,7 +158,9 @@ def test_create_jemaat():
 
 def test_update_jemaat_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     existing_jemaat = create_model_jemaat()
 
@@ -187,7 +193,7 @@ def test_update_jemaat_found():
         1
     )
 
-    repository.commit.assert_called_once()
+    unit_of_work.commit.assert_called_once()
 
     repository.refresh.assert_called_once_with(
         existing_jemaat
@@ -200,7 +206,9 @@ def test_update_jemaat_found():
 
 def test_update_jemaat_not_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     repository.get_by_id.return_value = None
 
@@ -211,9 +219,9 @@ def test_update_jemaat_not_found():
 
     assert result is None
 
-    repository.commit.assert_not_called()
+    unit_of_work.commit.assert_not_called()
 
-    repository.refresh.assert_not_called()
+    unit_of_work.rollback.assert_not_called()
 
 
 # =========================================================
@@ -222,7 +230,9 @@ def test_update_jemaat_not_found():
 
 def test_delete_jemaat_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     existing_jemaat = create_model_jemaat()
 
@@ -230,9 +240,7 @@ def test_delete_jemaat_found():
         existing_jemaat
     )
 
-    result = service.delete_jemaat(
-        1
-    )
+    result = service.delete_jemaat(1)
 
     assert result == existing_jemaat
 
@@ -244,7 +252,7 @@ def test_delete_jemaat_found():
         existing_jemaat
     )
 
-    repository.commit.assert_called_once()
+    unit_of_work.commit.assert_called_once()
 
 
 # =========================================================
@@ -253,19 +261,19 @@ def test_delete_jemaat_found():
 
 def test_delete_jemaat_not_found():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     repository.get_by_id.return_value = None
 
-    result = service.delete_jemaat(
-        999
-    )
+    result = service.delete_jemaat(999)
 
     assert result is None
 
     repository.delete.assert_not_called()
 
-    repository.commit.assert_not_called()
+    unit_of_work.commit.assert_not_called()
 
 
 # =========================================================
@@ -274,7 +282,9 @@ def test_delete_jemaat_not_found():
 
 def test_get_all_jemaat_repository_query():
 
-    service, repository = create_service()
+    service, repository, unit_of_work = (
+        create_service()
+    )
 
     mock_query = Mock()
 
@@ -308,13 +318,37 @@ def test_get_all_jemaat_repository_query():
     )
 
     assert result["items"] == []
-
     assert result["page"] == 1
-
     assert result["limit"] == 10
-
     assert result["total"] == 0
-
     assert result["total_pages"] == 0
 
     repository.get_query.assert_called_once()
+    
+    
+def test_create_jemaat_rollback_on_error():
+    service, repository, unit_of_work = (
+        create_service()
+    )
+
+    unit_of_work.commit.side_effect = Exception(
+        "Database error"
+    )
+
+    try:
+        service.create_jemaat(
+            create_jemaat_create()
+        )
+
+        assert False, (
+            "Exception seharusnya dilempar"
+        )
+
+    except Exception as exc:
+        assert str(exc) == "Database error"
+
+    repository.add.assert_called_once()
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_called_once()
