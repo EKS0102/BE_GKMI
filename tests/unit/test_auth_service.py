@@ -26,15 +26,24 @@ def create_user_model():
 # =========================================================
 
 def create_service():
-    repository = Mock()
+    """
+    Membuat AuthService menggunakan Mock UnitOfWork.
+
+    UnitOfWork memiliki:
+    - user repository
+    - refresh_token repository
+    """
+
     unit_of_work = Mock()
 
+    unit_of_work.user = Mock()
+    unit_of_work.refresh_token = Mock()
+
     service = AuthService(
-        repository,
         unit_of_work
     )
 
-    return service, repository, unit_of_work
+    return service, unit_of_work
 
 
 # =========================================================
@@ -43,13 +52,11 @@ def create_service():
 
 def test_get_user_by_username_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     expected = create_user_model()
 
-    repository.get_by_username.return_value = (
+    unit_of_work.user.get_by_username.return_value = (
         expected
     )
 
@@ -59,11 +66,12 @@ def test_get_user_by_username_found():
 
     assert result == expected
 
-    repository.get_by_username.assert_called_once_with(
+    unit_of_work.user.get_by_username.assert_called_once_with(
         "admin"
     )
 
     unit_of_work.commit.assert_not_called()
+
     unit_of_work.rollback.assert_not_called()
 
 
@@ -73,11 +81,9 @@ def test_get_user_by_username_found():
 
 def test_get_user_by_username_not_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
-    repository.get_by_username.return_value = None
+    unit_of_work.user.get_by_username.return_value = None
 
     result = service.get_user_by_username(
         "tidakada"
@@ -85,7 +91,7 @@ def test_get_user_by_username_not_found():
 
     assert result is None
 
-    repository.get_by_username.assert_called_once_with(
+    unit_of_work.user.get_by_username.assert_called_once_with(
         "tidakada"
     )
 
@@ -96,13 +102,11 @@ def test_get_user_by_username_not_found():
 
 def test_get_user_by_email_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     expected = create_user_model()
 
-    repository.get_by_email.return_value = (
+    unit_of_work.user.get_by_email.return_value = (
         expected
     )
 
@@ -112,7 +116,7 @@ def test_get_user_by_email_found():
 
     assert result == expected
 
-    repository.get_by_email.assert_called_once_with(
+    unit_of_work.user.get_by_email.assert_called_once_with(
         "admin@test.com"
     )
 
@@ -123,11 +127,9 @@ def test_get_user_by_email_found():
 
 def test_get_user_by_email_not_found():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
-    repository.get_by_email.return_value = None
+    unit_of_work.user.get_by_email.return_value = None
 
     result = service.get_user_by_email(
         "tidakada@test.com"
@@ -135,7 +137,7 @@ def test_get_user_by_email_not_found():
 
     assert result is None
 
-    repository.get_by_email.assert_called_once_with(
+    unit_of_work.user.get_by_email.assert_called_once_with(
         "tidakada@test.com"
     )
 
@@ -146,9 +148,7 @@ def test_get_user_by_email_not_found():
 
 def test_create_user():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     result = service.create_user(
         username="admin",
@@ -160,18 +160,26 @@ def test_create_user():
     assert result is not None
 
     assert result.username == "admin"
-    assert result.password_hash == "hashed-password"
+
+    assert result.password_hash == (
+        "hashed-password"
+    )
+
     assert result.role == "admin"
+
     assert result.is_active is True
+
     assert result.email == "admin@test.com"
 
-    repository.add.assert_called_once()
+    unit_of_work.user.add.assert_called_once()
 
     unit_of_work.commit.assert_called_once()
 
-    repository.refresh.assert_called_once_with(
+    unit_of_work.user.refresh.assert_called_once_with(
         result
     )
+
+    unit_of_work.rollback.assert_not_called()
 
 
 # =========================================================
@@ -180,9 +188,7 @@ def test_create_user():
 
 def test_create_user_integrity_error():
 
-    service, repository, unit_of_work = (
-        create_service()
-    )
+    service, unit_of_work = create_service()
 
     unit_of_work.commit.side_effect = IntegrityError(
         "INSERT",
@@ -207,10 +213,10 @@ def test_create_user_integrity_error():
 
         pass
 
-    repository.add.assert_called_once()
+    unit_of_work.user.add.assert_called_once()
 
     unit_of_work.commit.assert_called_once()
 
     unit_of_work.rollback.assert_called_once()
 
-    repository.refresh.assert_not_called()
+    unit_of_work.user.refresh.assert_not_called()

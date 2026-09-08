@@ -118,16 +118,11 @@ def get_jemaat_service(
 def get_auth_service(
     db: Session = Depends(get_db)
 ):
-    repository = UserRepository(
-        db
-    )
-
     unit_of_work = UnitOfWork(
         db
     )
 
     return AuthService(
-        repository,
         unit_of_work
     )
 

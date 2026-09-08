@@ -8,11 +8,19 @@ from repositories.jemaat_repository import (
     JemaatRepository
 )
 
+from repositories.refresh_token_repository import (
+    RefreshTokenRepository
+)
+
+from repositories.user_repository import (
+    UserRepository
+)
+
 
 class UnitOfWork:
     """
     Mengelola satu transaction database
-    untuk beberapa repository.
+    untuk seluruh repository.
 
     Semua repository menggunakan Session yang sama.
     """
@@ -32,6 +40,14 @@ class UnitOfWork:
         )
 
         self.audit_log = AuditLogRepository(
+            session
+        )
+
+        self.user = UserRepository(
+            session
+        )
+
+        self.refresh_token = RefreshTokenRepository(
             session
         )
 
