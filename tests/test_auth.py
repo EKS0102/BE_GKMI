@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from auth.refresh_token import hash_refresh_token
 
 from models.refresh_token import RefreshToken
 
@@ -50,9 +50,7 @@ def test_login_wrong_password(
 
     assert response.status_code == 401
 
-    data = response.json()
-
-    assert data["detail"] == (
+    assert response.json()["detail"] == (
         "Username atau password salah"
     )
 
@@ -74,15 +72,13 @@ def test_login_unknown_user(
 
     assert response.status_code == 401
 
-    data = response.json()
-
-    assert data["detail"] == (
+    assert response.json()["detail"] == (
         "Username atau password salah"
     )
 
 
 # =========================================================
-# LOGIN - REFRESH TOKEN
+# LOGIN - REFRESH TOKEN DISIMPAN
 # =========================================================
 
 def test_login_returns_refresh_token(
@@ -103,7 +99,7 @@ def test_login_returns_refresh_token(
     data = response.json()
 
     # =====================================================
-    # CEK RESPONSE
+    # RESPONSE
     # =====================================================
 
     assert "access_token" in data
@@ -114,7 +110,7 @@ def test_login_returns_refresh_token(
     assert data["token_type"] == "bearer"
 
     # =====================================================
-    # CEK DATABASE
+    # DATABASE
     # =====================================================
 
     refresh_token = (
@@ -128,7 +124,7 @@ def test_login_returns_refresh_token(
 
     assert refresh_token is not None
 
-    # Database tidak boleh menyimpan token asli
+    # Database menyimpan HASH, bukan token asli
     assert refresh_token.token_hash != (
         data["refresh_token"]
     )
@@ -141,12 +137,13 @@ def test_login_returns_refresh_token(
 
 
 # =========================================================
-# REFRESH TOKEN - SUCCESS
+# REFRESH TOKEN - ROTATION SUCCESS
 # =========================================================
 
 def test_refresh_token_success(
     client,
-    create_test_user
+    create_test_user,
+    db
 ):
     # =====================================================
     # LOGIN
@@ -162,18 +159,18 @@ def test_refresh_token_success(
 
     assert login_response.status_code == 200
 
-    refresh_token = login_response.json()[
+    old_refresh_token = login_response.json()[
         "refresh_token"
     ]
 
     # =====================================================
-    # REFRESH
+    # ROTATION
     # =====================================================
 
     response = client.post(
         "/auth/refresh",
         json={
-            "refresh_token": refresh_token
+            "refresh_token": old_refresh_token
         }
     )
 
@@ -185,13 +182,69 @@ def test_refresh_token_success(
     # RESPONSE
     # =====================================================
 
-    assert "access_token" in data
     assert data["access_token"]
+
+    assert data["refresh_token"]
+
+    assert data["refresh_token"] != (
+        old_refresh_token
+    )
 
     assert data["token_type"] == "bearer"
 
-    # Versi sekarang belum menggunakan rotation
-    assert "refresh_token" not in data
+    new_refresh_token = data[
+        "refresh_token"
+    ]
+
+    # =====================================================
+    # TOKEN LAMA
+    # =====================================================
+
+    old_hash = hash_refresh_token(
+        old_refresh_token
+    )
+
+    old_stored_token = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash
+            == old_hash
+        )
+        .first()
+    )
+
+    assert old_stored_token is not None
+
+    assert old_stored_token.revoked_at is not None
+
+    # =====================================================
+    # TOKEN BARU
+    # =====================================================
+
+    new_hash = hash_refresh_token(
+        new_refresh_token
+    )
+
+    new_stored_token = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash
+            == new_hash
+        )
+        .first()
+    )
+
+    assert new_stored_token is not None
+
+    assert new_stored_token.revoked_at is None
+
+    assert new_stored_token.user_id == (
+        create_test_user.id
+    )
+
+    assert new_stored_token.expires_at > (
+        new_stored_token.created_at
+    )
 
 
 # =========================================================
@@ -245,6 +298,8 @@ def test_refresh_token_expired(
     create_test_user,
     db
 ):
+    from datetime import UTC, datetime, timedelta
+
     # =====================================================
     # LOGIN
     # =====================================================
@@ -264,7 +319,7 @@ def test_refresh_token_expired(
     ]
 
     # =====================================================
-    # CARI TOKEN
+    # AMBIL TOKEN DARI DATABASE
     # =====================================================
 
     stored_token = (
@@ -279,7 +334,7 @@ def test_refresh_token_expired(
     assert stored_token is not None
 
     # =====================================================
-    # BUAT TOKEN EXPIRED
+    # EXPIRE TOKEN
     # =====================================================
 
     stored_token.expires_at = (
@@ -316,6 +371,8 @@ def test_refresh_token_revoked(
     create_test_user,
     db
 ):
+    from datetime import UTC, datetime
+
     # =====================================================
     # LOGIN
     # =====================================================
@@ -335,7 +392,7 @@ def test_refresh_token_revoked(
     ]
 
     # =====================================================
-    # CARI TOKEN
+    # AMBIL TOKEN
     # =====================================================
 
     stored_token = (
@@ -375,7 +432,150 @@ def test_refresh_token_revoked(
     assert response.json()["detail"] == (
         "Refresh token tidak valid"
     )
-    
+
+
+# =========================================================
+# OLD REFRESH TOKEN - REJECTED AFTER ROTATION
+# =========================================================
+
+def test_old_refresh_token_rejected_after_rotation(
+    client,
+    create_test_user
+):
+    # =====================================================
+    # LOGIN
+    # =====================================================
+
+    login_response = client.post(
+        "/auth/login",
+        json={
+            "username": "admin",
+            "password": "admin123"
+        }
+    )
+
+    assert login_response.status_code == 200
+
+    old_refresh_token = login_response.json()[
+        "refresh_token"
+    ]
+
+    # =====================================================
+    # ROTATION A → B
+    # =====================================================
+
+    first_refresh = client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": old_refresh_token
+        }
+    )
+
+    assert first_refresh.status_code == 200
+
+    new_refresh_token = first_refresh.json()[
+        "refresh_token"
+    ]
+
+    assert new_refresh_token != (
+        old_refresh_token
+    )
+
+    # =====================================================
+    # GUNAKAN TOKEN LAMA LAGI
+    # =====================================================
+
+    second_refresh = client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": old_refresh_token
+        }
+    )
+
+    assert second_refresh.status_code == 401
+
+    assert second_refresh.json()["detail"] == (
+        "Refresh token tidak valid"
+    )
+
+
+# =========================================================
+# NEW REFRESH TOKEN - STILL VALID
+# =========================================================
+
+def test_new_refresh_token_still_valid(
+    client,
+    create_test_user
+):
+    # =====================================================
+    # LOGIN
+    # =====================================================
+
+    login_response = client.post(
+        "/auth/login",
+        json={
+            "username": "admin",
+            "password": "admin123"
+        }
+    )
+
+    assert login_response.status_code == 200
+
+    first_refresh_token = login_response.json()[
+        "refresh_token"
+    ]
+
+    # =====================================================
+    # ROTATION A → B
+    # =====================================================
+
+    first_refresh = client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": first_refresh_token
+        }
+    )
+
+    assert first_refresh.status_code == 200
+
+    second_refresh_token = first_refresh.json()[
+        "refresh_token"
+    ]
+
+    assert second_refresh_token != (
+        first_refresh_token
+    )
+
+    # =====================================================
+    # ROTATION B → C
+    # =====================================================
+
+    second_refresh = client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": second_refresh_token
+        }
+    )
+
+    assert second_refresh.status_code == 200
+
+    data = second_refresh.json()
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
+
+    assert data["access_token"]
+
+    assert data["refresh_token"]
+
+    assert data["refresh_token"] != (
+        second_refresh_token
+    )
+
+    assert data["token_type"] == "bearer"
+
+
 # =========================================================
 # LOGOUT - SUCCESS
 # =========================================================
@@ -434,6 +634,7 @@ def test_logout_success(
     )
 
     assert stored_token is not None
+
     assert stored_token.revoked_at is not None
 
 
@@ -498,7 +699,7 @@ def test_logout_then_refresh(
     assert logout_response.status_code == 200
 
     # =====================================================
-    # REFRESH SETELAH LOGOUT
+    # REFRESH TOKEN SETELAH LOGOUT
     # =====================================================
 
     refresh_response = client.post(

@@ -15,8 +15,7 @@ from schemas.user import (
     LoginRequest,
     UserResponse,
     TokenResponse,
-    RefreshTokenRequest,
-    AccessTokenResponse
+    RefreshTokenRequest
 )
 
 from services.auth_service import AuthService
@@ -258,12 +257,12 @@ def login(
 
 
 # =========================================================
-# REFRESH ACCESS TOKEN
+# REFRESH ACCESS TOKEN - ROTATION
 # =========================================================
 
 @router.post(
     "/refresh",
-    response_model=AccessTokenResponse,
+    response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     responses={
         401: {
@@ -279,6 +278,7 @@ def login(
 )
 def refresh_access_token(
     data: RefreshTokenRequest,
+    request: Request,
     service: AuthService = Depends(
         get_auth_service
     )
@@ -288,12 +288,33 @@ def refresh_access_token(
     )
 
     # =====================================================
-    # REFRESH TOKEN
+    # IP ADDRESS
     # =====================================================
 
-    result = service.refresh_access_token(
-        data.refresh_token
-    )
+    ip_address = None
+
+    if request.client is not None:
+        ip_address = request.client.host
+
+    # =====================================================
+    # REFRESH TOKEN ROTATION
+    # =====================================================
+
+    try:
+        result = service.refresh_access_token(
+            raw_refresh_token=data.refresh_token,
+            ip_address=ip_address
+        )
+
+    except IntegrityError:
+        logger.exception(
+            "Gagal melakukan refresh token rotation"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gagal memperbarui session"
+        )
 
     # =====================================================
     # TOKEN TIDAK VALID
@@ -314,7 +335,7 @@ def refresh_access_token(
     # =====================================================
 
     logger.info(
-        "Access token berhasil diperbarui"
+        "Refresh token berhasil di-rotate"
     )
 
     return result
@@ -361,6 +382,10 @@ def logout(
             detail="Gagal melakukan logout"
         )
 
+    # =====================================================
+    # TOKEN TIDAK VALID
+    # =====================================================
+
     if not result:
         logger.warning(
             "Logout gagal, refresh token tidak valid"
@@ -370,6 +395,10 @@ def logout(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token tidak valid"
         )
+
+    # =====================================================
+    # BERHASIL
+    # =====================================================
 
     logger.info(
         "Logout berhasil"

@@ -615,9 +615,12 @@ def test_login_commit_error(
     
     
 # =========================================================
-# REFRESH ACCESS TOKEN - SUCCESS
+# REFRESH ACCESS TOKEN - ROTATION SUCCESS
 # =========================================================
 
+@patch(
+    "services.auth_service.generate_refresh_token"
+)
 @patch(
     "services.auth_service.create_access_token"
 )
@@ -626,51 +629,150 @@ def test_login_commit_error(
 )
 def test_refresh_access_token_success(
     mock_hash_refresh_token,
-    mock_create_access_token
+    mock_create_access_token,
+    mock_generate_refresh_token
 ):
     service, unit_of_work = create_service()
 
+    # =====================================================
+    # USER
+    # =====================================================
+
     user = create_user_model()
-
-    refresh_token = Mock()
-    refresh_token.user_id = 1
-
-    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
-        refresh_token
-    )
 
     unit_of_work.user.get_by_id.return_value = (
         user
     )
 
-    mock_hash_refresh_token.return_value = (
-        "hashed-refresh-token"
+    # =====================================================
+    # OLD REFRESH TOKEN
+    # =====================================================
+
+    old_refresh_token = Mock()
+
+    old_refresh_token.user_id = 1
+    old_refresh_token.revoked_at = None
+
+    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
+        old_refresh_token
+    )
+
+    # =====================================================
+    # MOCK FUNCTIONS
+    # =====================================================
+
+    mock_hash_refresh_token.side_effect = [
+        "hashed-old-refresh-token",
+        "hashed-new-refresh-token"
+    ]
+
+    mock_generate_refresh_token.return_value = (
+        "new-refresh-token"
     )
 
     mock_create_access_token.return_value = (
         "new-access-token"
     )
 
-    service.password_hash = Mock()
+    # =====================================================
+    # EXECUTE
+    # =====================================================
 
     result = service.refresh_access_token(
-        "raw-refresh-token"
+        "old-refresh-token",
+        ip_address="127.0.0.1"
     )
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
 
     assert result == {
         "access_token": "new-access-token",
+        "refresh_token": "new-refresh-token",
         "token_type": "bearer"
     }
 
-    mock_hash_refresh_token.assert_called_once_with(
-        "raw-refresh-token"
+    # =====================================================
+    # OLD TOKEN HASH
+    # =====================================================
+
+    assert (
+        mock_hash_refresh_token.call_args_list[0].args[0]
+        == "old-refresh-token"
     )
 
+    # =====================================================
+    # FIND ACTIVE TOKEN
+    # =====================================================
+
     unit_of_work.refresh_token.get_active_by_token_hash.assert_called_once()
+
+    # =====================================================
+    # FIND USER
+    # =====================================================
 
     unit_of_work.user.get_by_id.assert_called_once_with(
         1
     )
+
+    # =====================================================
+    # REVOKE OLD TOKEN
+    # =====================================================
+
+    unit_of_work.refresh_token.revoke.assert_called_once()
+
+    revoke_args = (
+        unit_of_work
+        .refresh_token
+        .revoke
+        .call_args
+        .args
+    )
+
+    assert revoke_args[0] is old_refresh_token
+
+    assert isinstance(
+        revoke_args[1],
+        datetime
+    )
+
+    assert revoke_args[1].tzinfo == UTC
+
+    # =====================================================
+    # CREATE NEW REFRESH TOKEN
+    # =====================================================
+
+    unit_of_work.refresh_token.add.assert_called_once()
+
+    new_refresh_token = (
+        unit_of_work
+        .refresh_token
+        .add
+        .call_args
+        .args[0]
+    )
+
+    assert isinstance(
+        new_refresh_token,
+        RefreshToken
+    )
+
+    assert new_refresh_token.user_id == 1
+
+    assert new_refresh_token.token_hash == (
+        "hashed-new-refresh-token"
+    )
+
+    assert new_refresh_token.revoked_at is None
+
+    assert new_refresh_token.ip_address == (
+        "127.0.0.1"
+    )
+
+    # =====================================================
+    # CREATE ACCESS TOKEN
+    # =====================================================
 
     mock_create_access_token.assert_called_once_with(
         {
@@ -679,7 +781,11 @@ def test_refresh_access_token_success(
         }
     )
 
-    unit_of_work.commit.assert_not_called()
+    # =====================================================
+    # COMMIT ONCE
+    # =====================================================
+
+    unit_of_work.commit.assert_called_once()
 
     unit_of_work.rollback.assert_not_called()
 

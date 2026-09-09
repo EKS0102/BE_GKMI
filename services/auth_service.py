@@ -288,27 +288,36 @@ class AuthService:
         }
 
     # =====================================================
-    # REFRESH ACCESS TOKEN
+    # REFRESH ACCESS TOKEN - ROTATION
     # =====================================================
 
     def refresh_access_token(
         self,
-        raw_refresh_token: str
+        raw_refresh_token: str,
+        ip_address: str | None = None
     ):
         """
-        Membuat access token baru menggunakan
-        refresh token yang masih valid.
+        Membuat access token baru dengan melakukan
+        refresh token rotation.
+
+        Flow:
+            1. Cari refresh token aktif
+            2. Cari user
+            3. Revoke refresh token lama
+            4. Buat refresh token baru
+            5. Buat access token baru
+            6. Commit satu transaction
 
         Return:
             dict
-                jika refresh token valid
+                jika berhasil
 
             None
                 jika refresh token tidak valid
         """
 
         # =================================================
-        # HASH REFRESH TOKEN DARI CLIENT
+        # HASH TOKEN
         # =================================================
 
         token_hash = hash_refresh_token(
@@ -324,7 +333,7 @@ class AuthService:
         )
 
         # =================================================
-        # CARI REFRESH TOKEN AKTIF
+        # CARI TOKEN AKTIF
         # =================================================
 
         stored_token = (
@@ -338,11 +347,6 @@ class AuthService:
 
         # =================================================
         # TOKEN TIDAK VALID
-        #
-        # Bisa karena:
-        # - token tidak ditemukan
-        # - token sudah revoked
-        # - token sudah expired
         # =================================================
 
         if stored_token is None:
@@ -370,23 +374,60 @@ class AuthService:
         if not user.is_active:
             return None
 
-        # =================================================
-        # BUAT ACCESS TOKEN BARU
-        # =================================================
+        try:
+            # =================================================
+            # REVOKE TOKEN LAMA
+            # =================================================
 
-        access_token = create_access_token(
-            {
-                "sub": user.username,
-                "role": user.role
-            }
-        )
+            revoked_at = datetime.now(
+                UTC
+            )
+
+            self.unit_of_work.refresh_token.revoke(
+                stored_token,
+                revoked_at
+            )
+
+            # =================================================
+            # BUAT REFRESH TOKEN BARU
+            #
+            # commit=False karena transaction belum selesai.
+            # =================================================
+
+            new_refresh_token = self.create_refresh_token(
+                user_id=user.id,
+                ip_address=ip_address,
+                commit=False
+            )
+
+            # =================================================
+            # BUAT ACCESS TOKEN BARU
+            # =================================================
+
+            access_token = create_access_token(
+                {
+                    "sub": user.username,
+                    "role": user.role
+                }
+            )
+
+            # =================================================
+            # COMMIT SEKALI
+            # =================================================
+
+            self.unit_of_work.commit()
+
+        except IntegrityError:
+            self.unit_of_work.rollback()
+            raise
 
         # =================================================
-        # RETURN ACCESS TOKEN
+        # RETURN TOKEN BARU
         # =================================================
 
         return {
             "access_token": access_token,
+            "refresh_token": new_refresh_token,
             "token_type": "bearer"
         }
 
@@ -420,10 +461,6 @@ class AuthService:
 
         # =================================================
         # CARI TOKEN
-        #
-        # Gunakan get_by_token_hash(), bukan
-        # get_active_by_token_hash(), karena logout
-        # perlu mengetahui apakah token memang ada.
         # =================================================
 
         stored_token = (
