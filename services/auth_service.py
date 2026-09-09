@@ -341,7 +341,8 @@ class AuthService:
             .refresh_token
             .get_active_by_token_hash(
                 token_hash,
-                now
+                now,
+                for_update=True
             )
         )
 

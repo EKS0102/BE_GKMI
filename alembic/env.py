@@ -12,6 +12,7 @@ from models.jemaat import Jemaat
 from models.user import User
 from models.audit_log import AuditLog
 from models.refresh_token import RefreshToken
+from models.login_attempt import LoginAttempt
 
 
 # =========================================================

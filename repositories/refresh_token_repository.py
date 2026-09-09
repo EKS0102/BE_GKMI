@@ -49,17 +49,22 @@ class RefreshTokenRepository:
     def get_active_by_token_hash(
         self,
         token_hash: str,
-        now: datetime
+        now: datetime,
+        for_update: bool = False
     ):
-        return (
+        query = (
             self.db.query(RefreshToken)
             .filter(
                 RefreshToken.token_hash == token_hash,
                 RefreshToken.revoked_at.is_(None),
                 RefreshToken.expires_at > now
             )
-            .first()
         )
+
+        if for_update:
+            query = query.with_for_update()
+
+        return query.first()
 
     # =====================================================
     # GET ALL ACTIVE TOKENS BY USER
