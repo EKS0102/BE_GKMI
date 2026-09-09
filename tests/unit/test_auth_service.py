@@ -612,3 +612,374 @@ def test_login_commit_error(
     unit_of_work.commit.assert_called_once()
 
     unit_of_work.rollback.assert_called_once()
+    
+    
+# =========================================================
+# REFRESH ACCESS TOKEN - SUCCESS
+# =========================================================
+
+@patch(
+    "services.auth_service.create_access_token"
+)
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_refresh_access_token_success(
+    mock_hash_refresh_token,
+    mock_create_access_token
+):
+    service, unit_of_work = create_service()
+
+    user = create_user_model()
+
+    refresh_token = Mock()
+    refresh_token.user_id = 1
+
+    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
+        refresh_token
+    )
+
+    unit_of_work.user.get_by_id.return_value = (
+        user
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    mock_create_access_token.return_value = (
+        "new-access-token"
+    )
+
+    service.password_hash = Mock()
+
+    result = service.refresh_access_token(
+        "raw-refresh-token"
+    )
+
+    assert result == {
+        "access_token": "new-access-token",
+        "token_type": "bearer"
+    }
+
+    mock_hash_refresh_token.assert_called_once_with(
+        "raw-refresh-token"
+    )
+
+    unit_of_work.refresh_token.get_active_by_token_hash.assert_called_once()
+
+    unit_of_work.user.get_by_id.assert_called_once_with(
+        1
+    )
+
+    mock_create_access_token.assert_called_once_with(
+        {
+            "sub": "admin",
+            "role": "admin"
+        }
+    )
+
+    unit_of_work.commit.assert_not_called()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# REFRESH ACCESS TOKEN - INVALID TOKEN
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_refresh_access_token_invalid_token(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    mock_hash_refresh_token.return_value = (
+        "invalid-hash"
+    )
+
+    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
+        None
+    )
+
+    result = service.refresh_access_token(
+        "invalid-token"
+    )
+
+    assert result is None
+
+    unit_of_work.user.get_by_id.assert_not_called()
+
+    unit_of_work.commit.assert_not_called()
+
+
+# =========================================================
+# REFRESH ACCESS TOKEN - USER NOT FOUND
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_refresh_access_token_user_not_found(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    refresh_token = Mock()
+    refresh_token.user_id = 1
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
+        refresh_token
+    )
+
+    unit_of_work.user.get_by_id.return_value = None
+
+    result = service.refresh_access_token(
+        "raw-refresh-token"
+    )
+
+    assert result is None
+
+
+# =========================================================
+# REFRESH ACCESS TOKEN - USER INACTIVE
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_refresh_access_token_user_inactive(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    refresh_token = Mock()
+    refresh_token.user_id = 1
+
+    user = create_user_model()
+    user.is_active = False
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
+        refresh_token
+    )
+
+    unit_of_work.user.get_by_id.return_value = (
+        user
+    )
+
+    result = service.refresh_access_token(
+        "raw-refresh-token"
+    )
+
+    assert result is None
+
+    unit_of_work.refresh_token.get_active_by_token_hash.assert_called_once()
+
+    unit_of_work.user.get_by_id.assert_called_once_with(
+        1
+    )
+
+    unit_of_work.commit.assert_not_called()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# REVOKE REFRESH TOKEN - SUCCESS
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_revoke_refresh_token_success(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    refresh_token = Mock()
+    refresh_token.revoked_at = None
+
+    unit_of_work.refresh_token.get_by_token_hash.return_value = (
+        refresh_token
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    result = service.revoke_refresh_token(
+        "raw-refresh-token"
+    )
+
+    assert result is True
+
+    # =====================================================
+    # HASH
+    # =====================================================
+
+    mock_hash_refresh_token.assert_called_once_with(
+        "raw-refresh-token"
+    )
+
+    # =====================================================
+    # FIND TOKEN
+    # =====================================================
+
+    unit_of_work.refresh_token.get_by_token_hash.assert_called_once_with(
+        "hashed-refresh-token"
+    )
+
+    # =====================================================
+    # REVOKE
+    # =====================================================
+
+    unit_of_work.refresh_token.revoke.assert_called_once()
+
+    revoke_args = (
+        unit_of_work
+        .refresh_token
+        .revoke
+        .call_args
+        .args
+    )
+
+    assert revoke_args[0] is refresh_token
+
+    assert isinstance(
+        revoke_args[1],
+        datetime
+    )
+
+    assert revoke_args[1].tzinfo == UTC
+
+    # =====================================================
+    # COMMIT
+    # =====================================================
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# REVOKE REFRESH TOKEN - NOT FOUND
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_revoke_refresh_token_not_found(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    mock_hash_refresh_token.return_value = (
+        "invalid-hash"
+    )
+
+    unit_of_work.refresh_token.get_by_token_hash.return_value = (
+        None
+    )
+
+    result = service.revoke_refresh_token(
+        "invalid-refresh-token"
+    )
+
+    assert result is False
+
+    unit_of_work.refresh_token.revoke.assert_not_called()
+
+    unit_of_work.commit.assert_not_called()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# REVOKE REFRESH TOKEN - ALREADY REVOKED
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_revoke_refresh_token_already_revoked(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    refresh_token = Mock()
+
+    refresh_token.revoked_at = datetime.now(
+        UTC
+    )
+
+    unit_of_work.refresh_token.get_by_token_hash.return_value = (
+        refresh_token
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    result = service.revoke_refresh_token(
+        "raw-refresh-token"
+    )
+
+    assert result is False
+
+    unit_of_work.refresh_token.revoke.assert_not_called()
+
+    unit_of_work.commit.assert_not_called()
+
+    unit_of_work.rollback.assert_not_called()
+
+
+# =========================================================
+# REVOKE REFRESH TOKEN - COMMIT ERROR
+# =========================================================
+
+@patch(
+    "services.auth_service.hash_refresh_token"
+)
+def test_revoke_refresh_token_commit_error(
+    mock_hash_refresh_token
+):
+    service, unit_of_work = create_service()
+
+    refresh_token = Mock()
+    refresh_token.revoked_at = None
+
+    unit_of_work.refresh_token.get_by_token_hash.return_value = (
+        refresh_token
+    )
+
+    mock_hash_refresh_token.return_value = (
+        "hashed-refresh-token"
+    )
+
+    unit_of_work.commit.side_effect = IntegrityError(
+        "UPDATE",
+        {},
+        Exception("database error")
+    )
+
+    with pytest.raises(IntegrityError):
+
+        service.revoke_refresh_token(
+            "raw-refresh-token"
+        )
+
+    unit_of_work.refresh_token.revoke.assert_called_once()
+
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_called_once()

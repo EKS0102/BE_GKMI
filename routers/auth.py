@@ -1,12 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    status
+)
+
 from sqlalchemy.exc import IntegrityError
+
 from pwdlib import PasswordHash
 
 from schemas.user import (
     RegisterRequest,
     LoginRequest,
     UserResponse,
-    TokenResponse
+    TokenResponse,
+    RefreshTokenRequest,
+    AccessTokenResponse
 )
 
 from services.auth_service import AuthService
@@ -17,6 +27,10 @@ from dependencies import (
 
 from logger import logger
 
+
+# =========================================================
+# ROUTER
+# =========================================================
 
 router = APIRouter(
     prefix="/auth",
@@ -241,3 +255,126 @@ def login(
     )
 
     return result
+
+
+# =========================================================
+# REFRESH ACCESS TOKEN
+# =========================================================
+
+@router.post(
+    "/refresh",
+    response_model=AccessTokenResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {
+            "description": (
+                "Refresh token tidak valid, "
+                "expired, atau revoked"
+            )
+        },
+        500: {
+            "description": "Internal Server Error"
+        }
+    }
+)
+def refresh_access_token(
+    data: RefreshTokenRequest,
+    service: AuthService = Depends(
+        get_auth_service
+    )
+):
+    logger.info(
+        "Percobaan refresh access token"
+    )
+
+    # =====================================================
+    # REFRESH TOKEN
+    # =====================================================
+
+    result = service.refresh_access_token(
+        data.refresh_token
+    )
+
+    # =====================================================
+    # TOKEN TIDAK VALID
+    # =====================================================
+
+    if result is None:
+        logger.warning(
+            "Refresh token tidak valid"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token tidak valid"
+        )
+
+    # =====================================================
+    # BERHASIL
+    # =====================================================
+
+    logger.info(
+        "Access token berhasil diperbarui"
+    )
+
+    return result
+
+
+# =========================================================
+# LOGOUT
+# =========================================================
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {
+            "description": "Refresh token tidak valid"
+        },
+        500: {
+            "description": "Internal Server Error"
+        }
+    }
+)
+def logout(
+    data: RefreshTokenRequest,
+    service: AuthService = Depends(
+        get_auth_service
+    )
+):
+    logger.info(
+        "Percobaan logout"
+    )
+
+    try:
+        result = service.revoke_refresh_token(
+            data.refresh_token
+        )
+
+    except IntegrityError:
+        logger.exception(
+            "Gagal melakukan revoke refresh token"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gagal melakukan logout"
+        )
+
+    if not result:
+        logger.warning(
+            "Logout gagal, refresh token tidak valid"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token tidak valid"
+        )
+
+    logger.info(
+        "Logout berhasil"
+    )
+
+    return {
+        "message": "Logout berhasil"
+    }

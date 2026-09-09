@@ -61,3 +61,20 @@ class UserRepository:
         user: User
     ):
         self.db.refresh(user)
+        
+        
+    # =========================================================
+    # GET USER BY ID
+    # =========================================================
+
+    def get_by_id(
+        self,
+        user_id: int
+    ):
+        return (
+            self.db.query(User)
+            .filter(
+                User.id == user_id
+            )
+            .first()
+        )

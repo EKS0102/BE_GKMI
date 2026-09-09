@@ -286,3 +286,190 @@ class AuthService:
             "refresh_token": refresh_token,
             "token_type": "bearer"
         }
+
+    # =====================================================
+    # REFRESH ACCESS TOKEN
+    # =====================================================
+
+    def refresh_access_token(
+        self,
+        raw_refresh_token: str
+    ):
+        """
+        Membuat access token baru menggunakan
+        refresh token yang masih valid.
+
+        Return:
+            dict
+                jika refresh token valid
+
+            None
+                jika refresh token tidak valid
+        """
+
+        # =================================================
+        # HASH REFRESH TOKEN DARI CLIENT
+        # =================================================
+
+        token_hash = hash_refresh_token(
+            raw_refresh_token
+        )
+
+        # =================================================
+        # WAKTU SEKARANG
+        # =================================================
+
+        now = datetime.now(
+            UTC
+        )
+
+        # =================================================
+        # CARI REFRESH TOKEN AKTIF
+        # =================================================
+
+        stored_token = (
+            self.unit_of_work
+            .refresh_token
+            .get_active_by_token_hash(
+                token_hash,
+                now
+            )
+        )
+
+        # =================================================
+        # TOKEN TIDAK VALID
+        #
+        # Bisa karena:
+        # - token tidak ditemukan
+        # - token sudah revoked
+        # - token sudah expired
+        # =================================================
+
+        if stored_token is None:
+            return None
+
+        # =================================================
+        # CARI USER
+        # =================================================
+
+        user = self.unit_of_work.user.get_by_id(
+            stored_token.user_id
+        )
+
+        # =================================================
+        # USER TIDAK DITEMUKAN
+        # =================================================
+
+        if user is None:
+            return None
+
+        # =================================================
+        # USER TIDAK AKTIF
+        # =================================================
+
+        if not user.is_active:
+            return None
+
+        # =================================================
+        # BUAT ACCESS TOKEN BARU
+        # =================================================
+
+        access_token = create_access_token(
+            {
+                "sub": user.username,
+                "role": user.role
+            }
+        )
+
+        # =================================================
+        # RETURN ACCESS TOKEN
+        # =================================================
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+
+    # =====================================================
+    # REVOKE REFRESH TOKEN
+    # =====================================================
+
+    def revoke_refresh_token(
+        self,
+        raw_refresh_token: str
+    ) -> bool:
+        """
+        Mencabut refresh token.
+
+        Return:
+            True
+                jika token berhasil dicabut
+
+            False
+                jika token tidak ditemukan
+                atau sudah pernah dicabut
+        """
+
+        # =================================================
+        # HASH TOKEN
+        # =================================================
+
+        token_hash = hash_refresh_token(
+            raw_refresh_token
+        )
+
+        # =================================================
+        # CARI TOKEN
+        #
+        # Gunakan get_by_token_hash(), bukan
+        # get_active_by_token_hash(), karena logout
+        # perlu mengetahui apakah token memang ada.
+        # =================================================
+
+        stored_token = (
+            self.unit_of_work
+            .refresh_token
+            .get_by_token_hash(
+                token_hash
+            )
+        )
+
+        # =================================================
+        # TOKEN TIDAK DITEMUKAN
+        # =================================================
+
+        if stored_token is None:
+            return False
+
+        # =================================================
+        # TOKEN SUDAH DIREVOKE
+        # =================================================
+
+        if stored_token.revoked_at is not None:
+            return False
+
+        # =================================================
+        # REVOKE TOKEN
+        # =================================================
+
+        revoked_at = datetime.now(
+            UTC
+        )
+
+        self.unit_of_work.refresh_token.revoke(
+            stored_token,
+            revoked_at
+        )
+
+        # =================================================
+        # COMMIT
+        # =================================================
+
+        try:
+            self.unit_of_work.commit()
+
+        except IntegrityError:
+            self.unit_of_work.rollback()
+            raise
+
+        return True

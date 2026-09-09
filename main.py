@@ -57,13 +57,8 @@ def home():
 
 
 # =========================================================
-# ROUTERS
+# REGISTER ROUTERS
 # =========================================================
 
-app.include_router(
-    auth_router
-)
-
-app.include_router(
-    jemaat_router
-)
+app.include_router(auth_router)
+app.include_router(jemaat_router)

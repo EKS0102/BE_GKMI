@@ -1,6 +1,10 @@
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr
+)
 
 
 # =========================================================
@@ -62,16 +66,6 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str
-    
-# =========================================================
-# TOKEN RESPONSE
-# Digunakan setelah login berhasil
-# =========================================================
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str
 
 
 # =========================================================
@@ -81,3 +75,13 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+# =========================================================
+# ACCESS TOKEN RESPONSE
+# Digunakan setelah refresh token berhasil
+# =========================================================
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
