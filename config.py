@@ -103,14 +103,45 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
 )
 
 
+# # =========================================================
+# # CORS
+# # =========================================================
+
+# CORS_ORIGINS_RAW = os.getenv(
+#     "CORS_ORIGINS",
+#     "http://localhost:3000,http://localhost:5173"
+# )
+
+# CORS_ORIGINS = [
+#     origin.strip()
+#     for origin in CORS_ORIGINS_RAW.split(",")
+#     if origin.strip()
+# ]
+
+
 # =========================================================
 # CORS
 # =========================================================
 
 CORS_ORIGINS_RAW = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:5173"
+    "CORS_ORIGINS"
 )
+
+if (
+    ENVIRONMENT == "production"
+    and not CORS_ORIGINS_RAW
+):
+    raise ValueError(
+        "CORS_ORIGINS wajib diset pada production"
+    )
+
+
+if not CORS_ORIGINS_RAW:
+    CORS_ORIGINS_RAW = (
+        "http://localhost:3000,"
+        "http://localhost:5173"
+    )
+
 
 CORS_ORIGINS = [
     origin.strip()
