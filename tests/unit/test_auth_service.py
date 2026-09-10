@@ -32,14 +32,15 @@ def create_user_model():
 # =========================================================
 
 def create_service():
-    """
-    Membuat AuthService menggunakan Mock UnitOfWork.
-    """
-
     unit_of_work = Mock()
 
-    unit_of_work.user = Mock()
-    unit_of_work.refresh_token = Mock()
+    # =====================================================
+    # DEFAULT LOGIN ATTEMPT STATE
+    # =====================================================
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = []
+
+    unit_of_work.login_attempt.count_recent_failed_attempts.return_value = 0
 
     service = AuthService(
         unit_of_work
@@ -490,9 +491,29 @@ def test_login_user_not_found():
         "tidakada"
     )
 
+    # Tidak membuat refresh token
     unit_of_work.refresh_token.add.assert_not_called()
 
-    unit_of_work.commit.assert_not_called()
+    # Login gagal dicatat sebagai LoginAttempt
+    unit_of_work.login_attempt.add.assert_called_once()
+
+    attempt = (
+        unit_of_work
+        .login_attempt
+        .add
+        .call_args
+        .args[0]
+    )
+
+    assert attempt.username == "tidakada"
+    assert attempt.ip_address is None
+    assert attempt.failed_at is not None
+    assert attempt.created_at is not None
+
+    # Commit diperlukan untuk menyimpan failed attempt
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_not_called()
 
 
 # =========================================================
@@ -544,14 +565,38 @@ def test_login_wrong_password():
 
     assert result is None
 
+    unit_of_work.user.get_by_username.assert_called_once_with(
+        "admin"
+    )
+
     service.password_hash.verify.assert_called_once_with(
         "wrong-password",
         user.password_hash
     )
 
+    # Tidak membuat refresh token
     unit_of_work.refresh_token.add.assert_not_called()
 
-    unit_of_work.commit.assert_not_called()
+    # Login gagal dicatat
+    unit_of_work.login_attempt.add.assert_called_once()
+
+    attempt = (
+        unit_of_work
+        .login_attempt
+        .add
+        .call_args
+        .args[0]
+    )
+
+    assert attempt.username == "admin"
+    assert attempt.ip_address is None
+    assert attempt.failed_at is not None
+    assert attempt.created_at is not None
+
+    # Commit diperlukan untuk menyimpan failed attempt
+    unit_of_work.commit.assert_called_once()
+
+    unit_of_work.rollback.assert_not_called()
 
 
 # =========================================================

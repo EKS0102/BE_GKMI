@@ -167,6 +167,11 @@ def register(
         403: {
             "description": "User tidak aktif"
         },
+        429: {
+            "description": (
+                "Terlalu banyak percobaan login"
+            )
+        },
         500: {
             "description": "Internal Server Error"
         }
@@ -205,7 +210,7 @@ def login(
 
     except IntegrityError:
         logger.exception(
-            f"Gagal membuat session login: "
+            f"Gagal memproses login: "
             f"{data.username}"
         )
 
@@ -227,6 +232,25 @@ def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User tidak aktif"
+        )
+
+    # =====================================================
+    # LOGIN TERLALU BANYAK
+    # =====================================================
+
+    if result == "locked":
+        logger.warning(
+            f"Login diblokir sementara: "
+            f"{data.username}, "
+            f"ip={ip_address}"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Terlalu banyak percobaan login. "
+                "Silakan coba lagi nanti."
+            )
         )
 
     # =====================================================
@@ -366,6 +390,10 @@ def logout(
     logger.info(
         "Percobaan logout"
     )
+
+    # =====================================================
+    # REVOKE REFRESH TOKEN
+    # =====================================================
 
     try:
         result = service.revoke_refresh_token(

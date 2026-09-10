@@ -51,7 +51,7 @@ class LoginAttempt(Base):
     # =====================================================
 
     failed_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False,
         index=True
     )
@@ -61,6 +61,6 @@ class LoginAttempt(Base):
     # =====================================================
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False
     )

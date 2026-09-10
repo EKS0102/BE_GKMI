@@ -16,11 +16,15 @@ from repositories.user_repository import (
     UserRepository
 )
 
+from repositories.login_attempt_repository import (
+    LoginAttemptRepository
+)
+
 
 class UnitOfWork:
     """
     Mengelola satu transaction database
-    untuk seluruh repository.
+    untuk beberapa repository.
 
     Semua repository menggunakan Session yang sama.
     """
@@ -35,6 +39,10 @@ class UnitOfWork:
         # REPOSITORIES
         # =================================================
 
+        self.user = UserRepository(
+            session
+        )
+
         self.jemaat = JemaatRepository(
             session
         )
@@ -43,11 +51,11 @@ class UnitOfWork:
             session
         )
 
-        self.user = UserRepository(
+        self.refresh_token = RefreshTokenRepository(
             session
         )
 
-        self.refresh_token = RefreshTokenRepository(
+        self.login_attempt = LoginAttemptRepository(
             session
         )
 

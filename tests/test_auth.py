@@ -714,3 +714,77 @@ def test_logout_then_refresh(
     assert refresh_response.json()["detail"] == (
         "Refresh token tidak valid"
     )
+    
+    
+# =========================================================
+# BRUTE FORCE - LOGIN LOCKOUT
+# =========================================================
+
+def test_login_locked_after_max_failed_attempts(
+    client,
+    create_test_user
+):
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={
+                "username": "admin",
+                "password": "password-salah"
+            }
+        )
+
+        assert response.status_code == 401
+
+        assert response.json()["detail"] == (
+            "Username atau password salah"
+        )
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "username": "admin",
+            "password": "password-salah"
+        }
+    )
+
+    assert response.status_code == 429
+
+    assert response.json()["detail"] == (
+        "Terlalu banyak percobaan login. "
+        "Silakan coba lagi nanti."
+    )
+
+
+# =========================================================
+# BRUTE FORCE - LOCK + CORRECT PASSWORD
+# =========================================================
+
+def test_locked_user_cannot_login_with_correct_password(
+    client,
+    create_test_user
+):
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={
+                "username": "admin",
+                "password": "password-salah"
+            }
+        )
+
+        assert response.status_code == 401
+
+    response = client.post(
+        "/auth/login",
+        json={
+            "username": "admin",
+            "password": "admin123"
+        }
+    )
+
+    assert response.status_code == 429
+
+    assert response.json()["detail"] == (
+        "Terlalu banyak percobaan login. "
+        "Silakan coba lagi nanti."
+    )

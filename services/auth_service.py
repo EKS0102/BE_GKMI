@@ -6,6 +6,7 @@ from pwdlib import PasswordHash
 
 from models.user import User
 from models.refresh_token import RefreshToken
+from models.login_attempt import LoginAttempt
 
 from unit_of_work import UnitOfWork
 
@@ -23,6 +24,10 @@ from auth.security import create_access_token
 
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+FAILED_LOGIN_WINDOW_MINUTES = 15
+LOGIN_LOCKOUT_MINUTES = 15
+
 
 # =========================================================
 # AUTH SERVICE
@@ -35,6 +40,7 @@ class AuthService:
     UnitOfWork menangani:
     - UserRepository
     - RefreshTokenRepository
+    - LoginAttemptRepository
     - transaction commit
     - transaction rollback
     """
@@ -187,6 +193,156 @@ class AuthService:
             raise
 
     # =====================================================
+    # CHECK LOGIN LOCK
+    # =====================================================
+
+    def _is_login_locked(
+        self,
+        username: str,
+        ip_address: str | None,
+        now: datetime
+    ) -> bool:
+        """
+        Menentukan apakah username + IP sedang
+        terkena temporary login lock.
+
+        Policy:
+            5 gagal login dalam 15 menit
+            = lock selama 15 menit sejak
+              percobaan gagal ke-5.
+        """
+
+        window_start = (
+            now
+            - timedelta(
+                minutes=FAILED_LOGIN_WINDOW_MINUTES
+            )
+        )
+
+        attempts = (
+            self.unit_of_work
+            .login_attempt
+            .get_recent_failed_attempts(
+                username=username,
+                ip_address=ip_address,
+                since=window_start
+            )
+        )
+
+        if len(attempts) < MAX_FAILED_LOGIN_ATTEMPTS:
+            return False
+
+        # =================================================
+        # ATTEMPT TERBARU
+        # =================================================
+
+        latest_attempt = attempts[0]
+
+        lock_until = (
+            latest_attempt.failed_at
+            + timedelta(
+                minutes=LOGIN_LOCKOUT_MINUTES
+            )
+        )
+
+        return lock_until > now
+
+    # =====================================================
+    # RECORD FAILED LOGIN
+    # =====================================================
+
+    def _record_failed_login(
+        self,
+        username: str,
+        ip_address: str | None,
+        failed_at: datetime
+    ):
+        """
+        Mencatat satu percobaan login gagal.
+
+        Method ini tidak commit sendiri.
+        """
+
+        attempt = LoginAttempt(
+            username=username,
+            ip_address=ip_address,
+            failed_at=failed_at,
+            created_at=failed_at
+        )
+
+        self.unit_of_work.login_attempt.add(
+            attempt
+        )
+
+    # =====================================================
+    # HANDLE FAILED LOGIN
+    # =====================================================
+
+    def _handle_failed_login(
+        self,
+        username: str,
+        ip_address: str | None
+    ) -> str:
+        """
+        Mencatat login gagal dan menentukan
+        apakah user/IP mencapai batas lock.
+
+        Return:
+            "locked"
+                jika sekarang terkena lock
+
+            "failed"
+                jika belum terkena lock
+        """
+
+        now = datetime.now(
+            UTC
+        )
+
+        # =================================================
+        # CATAT FAILED ATTEMPT
+        # =================================================
+
+        self._record_failed_login(
+            username=username,
+            ip_address=ip_address,
+            failed_at=now
+        )
+
+        try:
+            self.unit_of_work.commit()
+
+        except IntegrityError:
+            self.unit_of_work.rollback()
+            raise
+
+        # =================================================
+        # HITUNG ATTEMPT TERBARU
+        # =================================================
+
+        window_start = (
+            now
+            - timedelta(
+                minutes=FAILED_LOGIN_WINDOW_MINUTES
+            )
+        )
+
+        count = (
+            self.unit_of_work
+            .login_attempt
+            .count_recent_failed_attempts(
+                username=username,
+                ip_address=ip_address,
+                since=window_start
+            )
+        )
+
+        if count >= MAX_FAILED_LOGIN_ATTEMPTS:
+            return "locked"
+
+        return "failed"
+
+    # =====================================================
     # LOGIN
     # =====================================================
 
@@ -208,7 +364,29 @@ class AuthService:
 
             "inactive"
                 jika user tidak aktif
+
+            "locked"
+                jika login sedang diblokir sementara
         """
+
+        # =================================================
+        # WAKTU SEKARANG
+        # =================================================
+
+        now = datetime.now(
+            UTC
+        )
+
+        # =================================================
+        # CEK LOGIN LOCK
+        # =================================================
+
+        if self._is_login_locked(
+            username=username,
+            ip_address=ip_address,
+            now=now
+        ):
+            return "locked"
 
         # =================================================
         # CARI USER
@@ -223,6 +401,11 @@ class AuthService:
         # =================================================
 
         if user is None:
+            self._handle_failed_login(
+                username=username,
+                ip_address=ip_address
+            )
+
             return None
 
         # =================================================
@@ -240,10 +423,15 @@ class AuthService:
             password,
             user.password_hash
         ):
+            self._handle_failed_login(
+                username=username,
+                ip_address=ip_address
+            )
+
             return None
 
         # =================================================
-        # BUAT ACCESS TOKEN
+        # PASSWORD BENAR
         # =================================================
 
         access_token = create_access_token(
@@ -256,8 +444,8 @@ class AuthService:
         # =================================================
         # BUAT REFRESH TOKEN
         #
-        # commit=False supaya refresh token tidak commit
-        # sendiri. Login akan melakukan satu commit di akhir.
+        # commit=False supaya semua perubahan
+        # terjadi dalam satu transaction.
         # =================================================
 
         refresh_token = self.create_refresh_token(
@@ -267,7 +455,7 @@ class AuthService:
         )
 
         # =================================================
-        # COMMIT SATU TRANSACTION
+        # COMMIT LOGIN
         # =================================================
 
         try:
@@ -301,19 +489,12 @@ class AuthService:
         refresh token rotation.
 
         Flow:
-            1. Cari refresh token aktif
+            1. Cari refresh token aktif + row lock
             2. Cari user
             3. Revoke refresh token lama
             4. Buat refresh token baru
             5. Buat access token baru
             6. Commit satu transaction
-
-        Return:
-            dict
-                jika berhasil
-
-            None
-                jika refresh token tidak valid
         """
 
         # =================================================
@@ -333,7 +514,7 @@ class AuthService:
         )
 
         # =================================================
-        # CARI TOKEN AKTIF
+        # CARI TOKEN AKTIF + LOCK
         # =================================================
 
         stored_token = (
@@ -391,8 +572,6 @@ class AuthService:
 
             # =================================================
             # BUAT REFRESH TOKEN BARU
-            #
-            # commit=False karena transaction belum selesai.
             # =================================================
 
             new_refresh_token = self.create_refresh_token(

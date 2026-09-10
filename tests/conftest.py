@@ -18,6 +18,7 @@ from models.user import User
 from models.jemaat import Jemaat
 from models.audit_log import AuditLog
 from models.refresh_token import RefreshToken
+from models.login_attempt import LoginAttempt
 
 
 # =========================================================
@@ -103,6 +104,8 @@ def db():
         # =================================================
 
         # RefreshToken memiliki FK ke users
+        db_session.query(LoginAttempt).delete()
+        
         db_session.query(
             RefreshToken
         ).delete()
