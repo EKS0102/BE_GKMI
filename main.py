@@ -2,20 +2,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import CORS_ORIGINS
+
 from logger import logger
 
 from routers.auth import router as auth_router
 from routers.jemaat import router as jemaat_router
-
-
-# =========================================================
-# KONFIGURASI
-# =========================================================
-
-CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173"
-]
 
 
 # =========================================================
@@ -64,33 +56,17 @@ async def security_headers_middleware(
         request
     )
 
-    # =====================================================
-    # MENCEGAH MIME TYPE SNIFFING
-    # =====================================================
-
     response.headers[
         "X-Content-Type-Options"
     ] = "nosniff"
-
-    # =====================================================
-    # CLICKJACKING PROTECTION
-    # =====================================================
 
     response.headers[
         "X-Frame-Options"
     ] = "DENY"
 
-    # =====================================================
-    # REFERRER POLICY
-    # =====================================================
-
     response.headers[
         "Referrer-Policy"
     ] = "strict-origin-when-cross-origin"
-
-    # =====================================================
-    # BROWSER PERMISSION POLICY
-    # =====================================================
 
     response.headers[
         "Permissions-Policy"
