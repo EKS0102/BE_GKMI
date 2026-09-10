@@ -214,3 +214,33 @@ def test_expired_token(client):
     )
 
     assert response.status_code == 401
+    
+    
+# =========================================================
+# SECURITY HEADERS
+# =========================================================
+
+def test_security_headers(client):
+    response = client.get("/")
+
+    assert response.status_code == 200
+
+    assert response.headers[
+        "X-Content-Type-Options"
+    ] == "nosniff"
+
+    assert response.headers[
+        "X-Frame-Options"
+    ] == "DENY"
+
+    assert response.headers[
+        "Referrer-Policy"
+    ] == "strict-origin-when-cross-origin"
+
+    assert response.headers[
+        "Permissions-Policy"
+    ] == (
+        "camera=(), "
+        "microphone=(), "
+        "geolocation=()"
+    )

@@ -1,10 +1,21 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from logger import logger
 
 from routers.auth import router as auth_router
 from routers.jemaat import router as jemaat_router
+
+
+# =========================================================
+# KONFIGURASI
+# =========================================================
+
+CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173"
+]
 
 
 # =========================================================
@@ -16,6 +27,80 @@ app = FastAPI(
     description="Backend API untuk sistem Presensi Jemaat",
     version="1.0.0"
 )
+
+
+# =========================================================
+# CORS
+# =========================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS"
+    ],
+    allow_headers=[
+        "Authorization",
+        "Content-Type"
+    ]
+)
+
+
+# =========================================================
+# SECURITY HEADERS
+# =========================================================
+
+@app.middleware("http")
+async def security_headers_middleware(
+    request: Request,
+    call_next
+):
+    response = await call_next(
+        request
+    )
+
+    # =====================================================
+    # MENCEGAH MIME TYPE SNIFFING
+    # =====================================================
+
+    response.headers[
+        "X-Content-Type-Options"
+    ] = "nosniff"
+
+    # =====================================================
+    # CLICKJACKING PROTECTION
+    # =====================================================
+
+    response.headers[
+        "X-Frame-Options"
+    ] = "DENY"
+
+    # =====================================================
+    # REFERRER POLICY
+    # =====================================================
+
+    response.headers[
+        "Referrer-Policy"
+    ] = "strict-origin-when-cross-origin"
+
+    # =====================================================
+    # BROWSER PERMISSION POLICY
+    # =====================================================
+
+    response.headers[
+        "Permissions-Policy"
+    ] = (
+        "camera=(), "
+        "microphone=(), "
+        "geolocation=()"
+    )
+
+    return response
 
 
 # =========================================================
@@ -60,5 +145,10 @@ def home():
 # REGISTER ROUTERS
 # =========================================================
 
-app.include_router(auth_router)
-app.include_router(jemaat_router)
+app.include_router(
+    auth_router
+)
+
+app.include_router(
+    jemaat_router
+)

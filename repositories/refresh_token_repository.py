@@ -110,3 +110,39 @@ class RefreshTokenRepository:
         self.db.refresh(
             refresh_token
         )
+        
+    # =====================================================
+    # DELETE INVALID TOKENS
+    # =====================================================
+
+    def delete_invalid_tokens(
+        self,
+        now: datetime
+    ) -> int:
+        """
+        Menghapus refresh token yang sudah tidak valid.
+
+        Token dianggap tidak valid jika:
+        - sudah di-revoke, atau
+        - sudah expired.
+
+        Transaction commit dikelola oleh UnitOfWork.
+        """
+
+        deleted = (
+            self.db.query(RefreshToken)
+            .filter(
+                (
+                    RefreshToken.revoked_at.is_not(None)
+                )
+                |
+                (
+                    RefreshToken.expires_at <= now
+                )
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
+
+        return deleted
