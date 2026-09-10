@@ -11,6 +11,25 @@ load_dotenv()
 
 
 # =========================================================
+# ENVIRONMENT
+# =========================================================
+
+ENVIRONMENT = os.getenv(
+    "ENVIRONMENT",
+    "development"
+).lower()
+
+
+if ENVIRONMENT not in {
+    "development",
+    "production"
+}:
+    raise ValueError(
+        "ENVIRONMENT harus development atau production"
+    )
+
+
+# =========================================================
 # DATABASE
 # =========================================================
 
@@ -49,6 +68,24 @@ SECRET_KEY = os.getenv(
 if not SECRET_KEY:
     raise ValueError(
         "SECRET_KEY belum diset di file .env"
+    )
+
+
+# =========================================================
+# PRODUCTION SECRET VALIDATION
+# =========================================================
+
+if (
+    ENVIRONMENT == "production"
+    and (
+        SECRET_KEY.startswith("YOUR_")
+        or SECRET_KEY.startswith("docker-development-")
+        or len(SECRET_KEY) < 32
+    )
+):
+    raise ValueError(
+        "SECRET_KEY production tidak aman. "
+        "Gunakan secret yang kuat dan unik."
     )
 
 
