@@ -42,9 +42,16 @@ services:
     container_name: be_gkmi_api
 
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5433/presensi_jemaat
 
-      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5433/presensi_jemaat_test
+      # Host Windows:
+      # localhost:5433 -> Docker postgres:5432
+      #
+      # Antar-container:
+      # api -> postgres:5432
+
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/presensi_jemaat
+
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/presensi_jemaat_test
 
       SECRET_KEY: docker-development-secret-key-change-this-later-123456789
 
@@ -67,9 +74,9 @@ services:
       ]
 
 
-# =========================================================
+# =======================================================
 # VOLUMES
-# =========================================================
+# =======================================================
 
 volumes:
   postgres_data:
