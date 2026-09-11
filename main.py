@@ -154,6 +154,19 @@ def home():
         "message": "Presensi Jemaat API - berjalan"
     }
 
+# =========================================================
+# HEALTH CHECK
+# =========================================================
+
+@app.get(
+    "/health",
+    tags=["Health"]
+)
+def health_check():
+    return {
+        "status": "ok"
+    }
+    
 
 # =========================================================
 # REGISTER ROUTERS
