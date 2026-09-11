@@ -1,13 +1,30 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import (
+    FastAPI,
+    Request
+)
 
-from config import CORS_ORIGINS
+from fastapi.middleware.cors import (
+    CORSMiddleware
+)
+
+from fastapi.responses import (
+    JSONResponse
+)
+
+from config import (
+    CORS_ORIGINS,
+    ENVIRONMENT
+)
 
 from logger import logger
 
-from routers.auth import router as auth_router
-from routers.jemaat import router as jemaat_router
+from routers.auth import (
+    router as auth_router
+)
+
+from routers.jemaat import (
+    router as jemaat_router
+)
 
 
 # =========================================================
@@ -88,11 +105,32 @@ async def global_exception_handler(
     request: Request,
     exc: Exception
 ):
+    # =====================================================
+    # LOG INTERNAL ERROR
+    # =====================================================
+
     logger.exception(
         f"Internal Server Error - "
-        f"{request.method} {request.url.path} - "
+        f"{request.method} "
+        f"{request.url.path} - "
         f"{str(exc)}"
     )
+
+    # =====================================================
+    # PRODUCTION
+    # =====================================================
+
+    if ENVIRONMENT == "production":
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "Internal Server Error"
+            }
+        )
+
+    # =====================================================
+    # DEVELOPMENT
+    # =====================================================
 
     return JSONResponse(
         status_code=500,
