@@ -26,6 +26,7 @@ from routers.jemaat import (
     router as jemaat_router
 )
 
+from database.database import engine
 
 # =========================================================
 # APP
@@ -167,6 +168,36 @@ def health_check():
         "status": "ok"
     }
     
+# =========================================================
+# READINESS CHECK
+# =========================================================
+
+@app.get(
+    "/health/ready",
+    tags=["Health"]
+)
+def readiness_check():
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql(
+                "SELECT 1"
+            )
+
+        return {
+            "status": "ready"
+        }
+
+    except Exception:
+        logger.exception(
+            "Database readiness check gagal"
+        )
+
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready"
+            }
+        )
 
 # =========================================================
 # REGISTER ROUTERS
