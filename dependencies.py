@@ -6,6 +6,9 @@ from unit_of_work import UnitOfWork
 
 from services.auth_service import AuthService
 from services.jemaat_service import JemaatService
+from services.security_cleanup_service import (
+    SecurityCleanupService
+)
 
 
 # =========================================================
@@ -49,5 +52,21 @@ def get_auth_service(
     )
 
     return AuthService(
+        unit_of_work
+    )
+
+
+# =========================================================
+# SECURITY CLEANUP SERVICE
+# =========================================================
+
+def get_security_cleanup_service(
+    db: Session = Depends(get_db)
+):
+    unit_of_work = UnitOfWork(
+        db
+    )
+
+    return SecurityCleanupService(
         unit_of_work
     )
