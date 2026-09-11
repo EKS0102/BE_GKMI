@@ -27,6 +27,11 @@ class UnitOfWork:
     untuk beberapa repository.
 
     Semua repository menggunakan Session yang sama.
+
+    Mendukung context manager:
+
+        with UnitOfWork(session) as uow:
+            ...
     """
 
     def __init__(
@@ -60,15 +65,46 @@ class UnitOfWork:
         )
 
     # =====================================================
+    # CONTEXT MANAGER - ENTER
+    # =====================================================
+
+    def __enter__(
+        self
+    ):
+        return self
+
+    # =====================================================
+    # CONTEXT MANAGER - EXIT
+    # =====================================================
+
+    def __exit__(
+        self,
+        exc_type,
+        exc_value,
+        traceback
+    ):
+        if exc_type is not None:
+            self.rollback()
+            return False
+
+        self.commit()
+
+        return False
+
+    # =====================================================
     # COMMIT
     # =====================================================
 
-    def commit(self):
+    def commit(
+        self
+    ):
         self.session.commit()
 
     # =====================================================
     # ROLLBACK
     # =====================================================
 
-    def rollback(self):
+    def rollback(
+        self
+    ):
         self.session.rollback()
