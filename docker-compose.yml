@@ -54,6 +54,8 @@ services:
 
       ENVIRONMENT: ${ENVIRONMENT:-development}
 
+      CORS_ORIGINS: ${CORS_ORIGINS}
+
       LOG_DIR: ${LOG_DIR:-logs}
 
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
