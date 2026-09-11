@@ -754,6 +754,68 @@ def test_login_locked_after_max_failed_attempts(
         "Silakan coba lagi nanti."
     )
 
+# =========================================================
+# BOUNDARY - BELUM LOCKED PADA 4 FAILED ATTEMPTS
+# =========================================================
+
+def test_login_not_locked_before_max_failed_attempts(
+    client,
+    create_test_user
+):
+    for _ in range(4):
+        response = client.post(
+            "/auth/login",
+            json={
+                "username": create_test_user.username,
+                "password": "wrong-password"
+            }
+        )
+
+        assert response.status_code == 401
+
+    # Batas belum tercapai.
+    # Password benar masih boleh login.
+    response = client.post(
+        "/auth/login",
+        json={
+            "username": create_test_user.username,
+            "password": "admin123"
+        }
+    )
+
+    assert response.status_code == 200
+
+
+# =========================================================
+# BOUNDARY - LOCKED PADA 5 FAILED ATTEMPTS
+# =========================================================
+
+def test_login_locked_at_max_failed_attempts(
+    client,
+    create_test_user
+):
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={
+                "username": create_test_user.username,
+                "password": "wrong-password"
+            }
+        )
+
+        assert response.status_code == 401
+
+    # Setelah mencapai 5 failed attempts,
+    # login harus terkena lock.
+    response = client.post(
+        "/auth/login",
+        json={
+            "username": create_test_user.username,
+            "password": "admin123"
+        }
+    )
+
+    assert response.status_code == 429
 
 # =========================================================
 # BRUTE FORCE - LOCK + CORRECT PASSWORD

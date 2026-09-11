@@ -8,7 +8,8 @@ from models.user import User
 from models.refresh_token import RefreshToken
 from services.auth_service import (
     AuthService,
-    REFRESH_TOKEN_EXPIRE_DAYS
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    LOGIN_LOCKOUT_MINUTES
 )
 
 
@@ -1134,3 +1135,331 @@ def test_revoke_refresh_token_commit_error(
     unit_of_work.commit.assert_called_once()
 
     unit_of_work.rollback.assert_called_once()
+    
+# =========================================================
+# LOCKOUT TIME - SEBELUM LOCKOUT BERAKHIR
+# =========================================================
+
+def test_is_login_locked_before_lockout_expires():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    # 5 failed attempts agar threshold tercapai.
+    latest_failed_at = (
+        now
+        - timedelta(
+            minutes=LOGIN_LOCKOUT_MINUTES - 1
+        )
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = [
+        Mock(failed_at=latest_failed_at),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=1)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=2)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=3)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=4)),
+    ]
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        None,
+        now
+    )
+
+    assert result is True
+
+
+# =========================================================
+# LOCKOUT TIME - SETELAH LOCKOUT BERAKHIR
+# =========================================================
+
+def test_is_login_not_locked_after_lockout_expires():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    # 5 failed attempts, tetapi attempt terbaru
+    # sudah lebih dari 15 menit.
+    latest_failed_at = (
+        now
+        - timedelta(
+            minutes=LOGIN_LOCKOUT_MINUTES + 1
+        )
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = [
+        Mock(failed_at=latest_failed_at),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=1)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=2)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=3)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=4)),
+    ]
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        None,
+        now
+    )
+
+    assert result is False
+    
+# =========================================================
+# LOCKOUT TIME - TEPAT PADA BATAS 15 MENIT
+# =========================================================
+
+def test_is_login_not_locked_at_exact_lockout_expiration():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    latest_failed_at = (
+        now
+        - timedelta(
+            minutes=LOGIN_LOCKOUT_MINUTES
+        )
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = [
+        Mock(failed_at=latest_failed_at),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=1)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=2)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=3)),
+        Mock(failed_at=latest_failed_at - timedelta(seconds=4)),
+    ]
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        None,
+        now
+    )
+
+    assert result is False
+    
+
+# =========================================================
+# LOCKOUT MENGGUNAKAN ATTEMPT TERBARU
+# =========================================================
+
+def test_is_login_locked_uses_latest_attempt():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    latest_failed_at = (
+        now
+        - timedelta(minutes=1)
+    )
+
+    old_failed_at = (
+        now
+        - timedelta(hours=1)
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = [
+        Mock(failed_at=latest_failed_at),
+        Mock(failed_at=old_failed_at),
+        Mock(failed_at=old_failed_at - timedelta(minutes=1)),
+        Mock(failed_at=old_failed_at - timedelta(minutes=2)),
+        Mock(failed_at=old_failed_at - timedelta(minutes=3)),
+    ]
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        None,
+        now
+    )
+
+    assert result is True
+    
+
+# =========================================================
+# LOCKOUT MENGGUNAKAN ATTEMPT TERBARU
+# =========================================================
+
+def test_is_login_locked_uses_latest_attempt():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    latest_failed_at = (
+        now
+        - timedelta(minutes=1)
+    )
+
+    old_failed_at = (
+        now
+        - timedelta(hours=1)
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = [
+        Mock(failed_at=latest_failed_at),
+        Mock(failed_at=old_failed_at),
+        Mock(failed_at=old_failed_at - timedelta(minutes=1)),
+        Mock(failed_at=old_failed_at - timedelta(minutes=2)),
+        Mock(failed_at=old_failed_at - timedelta(minutes=3)),
+    ]
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        None,
+        now
+    )
+
+    assert result is True
+    
+
+# =========================================================
+# LOCKOUT - USERNAME + IP ISOLATION
+# =========================================================
+
+def test_is_login_locked_filters_by_username_and_ip():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = []
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        "10.0.0.1",
+        now
+    )
+
+    assert result is False
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.assert_called_once()
+
+    call = (
+        unit_of_work
+        .login_attempt
+        .get_recent_failed_attempts
+        .call_args
+    )
+
+    assert call.kwargs["username"] == "test-user"
+    assert call.kwargs["ip_address"] == "10.0.0.1"
+    assert call.kwargs["since"] == (
+        now - timedelta(
+            minutes=15
+        )
+    )
+    
+
+# =========================================================
+# LOCKOUT - TANPA IP ADDRESS
+# =========================================================
+
+def test_is_login_locked_without_ip_address():
+    unit_of_work = Mock()
+
+    now = datetime(
+        2026,
+        9,
+        11,
+        10,
+        0,
+        0,
+        tzinfo=UTC
+    )
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.return_value = []
+
+    service = AuthService(
+        unit_of_work
+    )
+
+    result = service._is_login_locked(
+        "test-user",
+        None,
+        now
+    )
+
+    assert result is False
+
+    unit_of_work.login_attempt.get_recent_failed_attempts.assert_called_once()
+
+    call = (
+        unit_of_work
+        .login_attempt
+        .get_recent_failed_attempts
+        .call_args
+    )
+
+    assert call.kwargs["username"] == "test-user"
+    assert call.kwargs["ip_address"] is None
+    assert call.kwargs["since"] == (
+        now - timedelta(minutes=15)
+    )
