@@ -42,13 +42,6 @@ services:
     container_name: be_gkmi_api
 
     environment:
-
-      # Host Windows:
-      # localhost:5433 -> Docker postgres:5432
-      #
-      # Antar-container:
-      # api -> postgres:5432
-
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-presensi_jemaat}
 
       TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${TEST_DATABASE_NAME:-presensi_jemaat_test}
@@ -60,6 +53,10 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
 
       ENVIRONMENT: ${ENVIRONMENT:-development}
+
+      LOG_DIR: ${LOG_DIR:-logs}
+
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     ports:
       - "8000:8000"
