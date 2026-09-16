@@ -1463,3 +1463,66 @@ def test_is_login_locked_without_ip_address():
     assert call.kwargs["since"] == (
         now - timedelta(minutes=15)
     )
+
+# =========================================================
+# HANDLE FAILED LOGIN - INTEGRITY ERROR
+# =========================================================
+
+def test_handle_failed_login_integrity_error():
+
+    service, unit_of_work = create_service()
+
+    unit_of_work.commit.side_effect = IntegrityError(
+        "statement",
+        "params",
+        Exception("duplicate")
+    )
+
+    with pytest.raises(IntegrityError):
+        service._handle_failed_login(
+            username="budi",
+            ip_address="127.0.0.1"
+        )
+
+    unit_of_work.login_attempt.add.assert_called_once()
+    unit_of_work.commit.assert_called_once()
+    unit_of_work.rollback.assert_called_once()
+
+
+# =========================================================
+# REFRESH ACCESS TOKEN - INTEGRITY ERROR
+# =========================================================
+
+def test_refresh_access_token_integrity_error():
+
+    service, unit_of_work = create_service()
+
+    stored_token = Mock()
+    stored_token.user_id = 1
+
+    user = Mock()
+    user.id = 1
+    user.username = "budi"
+    user.role = "admin"
+    user.is_active = True
+
+    unit_of_work.refresh_token.get_active_by_token_hash.return_value = (
+        stored_token
+    )
+    unit_of_work.user.get_by_id.return_value = user
+
+    unit_of_work.commit.side_effect = IntegrityError(
+        "statement",
+        "params",
+        Exception("duplicate")
+    )
+
+    with pytest.raises(IntegrityError):
+        service.refresh_access_token(
+            raw_refresh_token="test-refresh-token",
+            ip_address="127.0.0.1"
+        )
+
+    unit_of_work.refresh_token.revoke.assert_called_once()
+    unit_of_work.commit.assert_called_once()
+    unit_of_work.rollback.assert_called_once()

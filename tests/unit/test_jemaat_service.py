@@ -1,6 +1,8 @@
 from datetime import date
 from unittest.mock import Mock
 
+import pytest
+
 from models.jemaat import Jemaat
 
 from schemas.jemaat import (
@@ -469,3 +471,157 @@ def test_get_all_jemaat_repository_query():
     assert result["total_pages"] == 0
 
     unit_of_work.jemaat.get_query.assert_called_once()
+
+
+# =========================================================
+# GET ALL - INVALID SORT FIELD
+# =========================================================
+
+def test_get_all_jemaat_invalid_sort_field():
+
+    service, unit_of_work = create_service()
+
+    mock_query = Mock()
+
+    unit_of_work.jemaat.get_query.return_value = mock_query
+
+    with pytest.raises(ValueError) as exc_info:
+        service.get_all_jemaat(
+            page=1,
+            limit=10,
+            sort_by="field_tidak_valid",
+            sort_order="asc"
+        )
+
+    assert str(exc_info.value) == (
+        "Field sorting 'field_tidak_valid' tidak diperbolehkan"
+    )
+
+
+# =========================================================
+# GET ALL - INVALID SORT ORDER
+# =========================================================
+
+def test_get_all_jemaat_invalid_sort_order():
+
+    service, unit_of_work = create_service()
+
+    mock_query = Mock()
+
+    unit_of_work.jemaat.get_query.return_value = mock_query
+
+    with pytest.raises(ValueError) as exc_info:
+        service.get_all_jemaat(
+            page=1,
+            limit=10,
+            sort_by="id",
+            sort_order="invalid"
+        )
+
+    assert str(exc_info.value) == (
+        "sort_order harus 'asc' atau 'desc'"
+    )
+
+
+# =========================================================
+# BULK CREATE + AUDIT LOG
+# =========================================================
+
+def test_create_jemaat_bulk_with_audit_log():
+
+    service, unit_of_work = create_service()
+
+    jemaat_1 = create_jemaat_create()
+    jemaat_2 = create_jemaat_create()
+
+    result = service.create_jemaat_bulk(
+        [jemaat_1, jemaat_2],
+        user_id=1,
+        ip_address="127.0.0.1"
+    )
+
+    assert len(result) == 2
+
+    unit_of_work.jemaat.add_many.assert_called_once_with(result)
+
+    assert unit_of_work.audit_log.add.call_count == 2
+
+    unit_of_work.session.flush.assert_called_once()
+    unit_of_work.commit.assert_called_once()
+    unit_of_work.jemaat.refresh_many.assert_called_once_with(result)
+
+
+# =========================================================
+# BULK CREATE - EXCEPTION / ROLLBACK
+# =========================================================
+
+def test_create_jemaat_bulk_exception():
+
+    service, unit_of_work = create_service()
+
+    unit_of_work.jemaat.add_many.side_effect = Exception(
+        "database error"
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        service.create_jemaat_bulk(
+            [create_jemaat_create()]
+        )
+
+    assert str(exc_info.value) == "database error"
+
+    unit_of_work.rollback.assert_called_once()
+    unit_of_work.commit.assert_not_called()
+
+
+# =========================================================
+# UPDATE - EXCEPTION / ROLLBACK
+# =========================================================
+
+def test_update_jemaat_exception():
+
+    service, unit_of_work = create_service()
+
+    existing_jemaat = create_model_jemaat()
+
+    unit_of_work.jemaat.get_by_id.return_value = existing_jemaat
+
+    unit_of_work.session.flush.side_effect = Exception(
+        "database error"
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        service.update_jemaat(
+            1,
+            create_jemaat_update()
+        )
+
+    assert str(exc_info.value) == "database error"
+
+    unit_of_work.rollback.assert_called_once()
+    unit_of_work.commit.assert_not_called()
+
+
+# =========================================================
+# DELETE - EXCEPTION / ROLLBACK
+# =========================================================
+
+def test_delete_jemaat_exception():
+
+    service, unit_of_work = create_service()
+
+    existing_jemaat = create_model_jemaat()
+
+    unit_of_work.jemaat.get_by_id.return_value = existing_jemaat
+
+    unit_of_work.jemaat.delete.side_effect = Exception(
+        "database error"
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        service.delete_jemaat(1)
+
+    assert str(exc_info.value) == "database error"
+
+    unit_of_work.rollback.assert_called_once()
+    unit_of_work.commit.assert_not_called()
