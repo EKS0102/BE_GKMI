@@ -15,7 +15,8 @@ from schemas.user import (
     LoginRequest,
     UserResponse,
     TokenResponse,
-    RefreshTokenRequest
+    RefreshTokenRequest,
+    UserRole
 )
 
 from services.auth_service import AuthService
@@ -130,7 +131,7 @@ def register(
         user = service.create_user(
             username=data.username,
             password_hash=hashed_password,
-            role=data.role.value,
+            role=UserRole.VIEWER.value,
             email=email_value
         )
 

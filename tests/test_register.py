@@ -1,12 +1,11 @@
 def test_register_success(client):
     response = client.post(
         "/auth/register",
-        json={
-            "username": "andi",
-            "password": "andi123",
-            "role": "staff",
-            "email": "andi@test.com"
-        }
+            json={
+                "username": "andi",
+                "password": "andi123",
+                "email": "andi@test.com"
+            }
     )
 
     assert response.status_code == 201
@@ -14,7 +13,7 @@ def test_register_success(client):
     data = response.json()
 
     assert data["username"] == "andi"
-    assert data["role"] == "staff"
+    assert data["role"] == "viewer"
     assert data["is_active"] is True
     assert data["email"] == "andi@test.com"
 
@@ -77,3 +76,20 @@ def test_register_invalid_email(client):
     )
 
     assert response.status_code == 422
+    
+def test_register_cannot_assign_admin_role(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "privilege_test",
+            "password": "password123",
+            "role": "admin",
+            "email": "privilege@test.com"
+        }
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["role"] == "viewer"

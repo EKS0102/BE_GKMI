@@ -6,7 +6,6 @@ from pydantic import (
     EmailStr
 )
 
-
 # =========================================================
 # ENUM - PILIHAN ROLE USER
 # =========================================================
@@ -22,10 +21,15 @@ class UserRole(str, Enum):
 # Digunakan saat POST /auth/register
 # =========================================================
 
+# class RegisterRequest(BaseModel):
+#     username: str
+#     password: str
+#     role: UserRole = UserRole.VIEWER
+#     email: EmailStr
+    
 class RegisterRequest(BaseModel):
     username: str
     password: str
-    role: UserRole = UserRole.VIEWER
     email: EmailStr
 
 
